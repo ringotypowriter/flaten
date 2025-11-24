@@ -36,6 +36,7 @@ pub fn detect_speech_segments(
     var in_speech = false;
     var seg_start_ms: u64 = 0;
     var last_voiced_end_ms: u64 = 0;
+    var current_silence_ms: u64 = 0;
 
     var i: usize = 0;
     while (i < pcm.len) : (i += frame_samples) {
@@ -59,18 +60,25 @@ pub fn detect_speech_segments(
             if (!in_speech) {
                 in_speech = true;
                 seg_start_ms = frame_ms_start;
+                current_silence_ms = 0;
             }
             last_voiced_end_ms = frame_ms_end;
+            // 只要再次出现有声帧，静音累积清零
+            current_silence_ms = 0;
         } else if (in_speech) {
-            // 结束一个语音段，检查是否满足最小持续时间
-            const duration = last_voiced_end_ms - seg_start_ms;
-            if (duration >= config.min_speech_ms) {
-                try segments.append(.{
-                    .start_ms = seg_start_ms,
-                    .end_ms = last_voiced_end_ms,
-                });
+            // 语音段内部的静音：累积时长，直到超过 min_silence_ms 才真正收尾
+            current_silence_ms += frame_ms_end - frame_ms_start;
+            if (current_silence_ms >= config.min_silence_ms) {
+                const duration = last_voiced_end_ms - seg_start_ms;
+                if (duration >= config.min_speech_ms) {
+                    try segments.append(.{
+                        .start_ms = seg_start_ms,
+                        .end_ms = last_voiced_end_ms,
+                    });
+                }
+                in_speech = false;
+                current_silence_ms = 0;
             }
-            in_speech = false;
         }
     }
 
@@ -127,4 +135,79 @@ test "short blips below min_speech_ms are ignored" {
     const segments = try detect_speech_segments(gpa, pcm, sample_rate, cfg);
     defer gpa.free(segments);
     try std.testing.expectEqual(@as(usize, 0), segments.len);
+}
+
+test "short silence inside speech does not split segment when below min_silence_ms" {
+    const gpa = std.testing.allocator;
+    const sample_rate: u32 = 16_000;
+    const total_ms: u32 = 1200;
+    const total_samples: usize = @intCast((@as(u64, total_ms) * sample_rate) / 1000);
+    var pcm = try gpa.alloc(i16, total_samples);
+    defer gpa.free(pcm);
+
+    // 0-400ms: voiced
+    // 400-500ms: short silence (< min_silence_ms = 200ms)
+    // 500-900ms: voiced
+    // 900-1200ms: silence
+    const s0 = (0 * sample_rate) / 1000;
+    const s1 = (400 * sample_rate) / 1000;
+    const s2 = (500 * sample_rate) / 1000;
+    const s3 = (900 * sample_rate) / 1000;
+
+    for (pcm[0..s0]) |*s| s.* = 0;
+    for (pcm[s0..s1]) |*s| s.* = 3000;
+    for (pcm[s1..s2]) |*s| s.* = 0;
+    for (pcm[s2..s3]) |*s| s.* = 3000;
+    for (pcm[s3..]) |*s| s.* = 0;
+
+    const cfg = VadConfig{
+        .min_speech_ms = 200,
+        .min_silence_ms = 200,
+    };
+    const segments = try detect_speech_segments(gpa, pcm, sample_rate, cfg);
+    defer gpa.free(segments);
+
+    // 期望被视为一个连续语音段，大约覆盖 0–900ms。
+    try std.testing.expectEqual(@as(usize, 1), segments.len);
+    try std.testing.expect(segments[0].start_ms <= 100 and segments[0].start_ms <= 100);
+    try std.testing.expect(segments[0].end_ms >= 800 and segments[0].end_ms <= 1000);
+}
+
+test "longer silence splits into two segments when above min_silence_ms" {
+    const gpa = std.testing.allocator;
+    const sample_rate: u32 = 16_000;
+    const total_ms: u32 = 1600;
+    const total_samples: usize = @intCast((@as(u64, total_ms) * sample_rate) / 1000);
+    var pcm = try gpa.alloc(i16, total_samples);
+    defer gpa.free(pcm);
+
+    // 0-400ms: voiced
+    // 400-700ms: silence (300ms > min_silence_ms)
+    // 700-1100ms: voiced
+    // 1100-1600ms: silence
+    const s0 = (0 * sample_rate) / 1000;
+    const s1 = (400 * sample_rate) / 1000;
+    const s2 = (700 * sample_rate) / 1000;
+    const s3 = (1100 * sample_rate) / 1000;
+
+    for (pcm[0..s0]) |*s| s.* = 0;
+    for (pcm[s0..s1]) |*s| s.* = 3000;
+    for (pcm[s1..s2]) |*s| s.* = 0;
+    for (pcm[s2..s3]) |*s| s.* = 3000;
+    for (pcm[s3..]) |*s| s.* = 0;
+
+    const cfg = VadConfig{
+        .min_speech_ms = 200,
+        .min_silence_ms = 200,
+    };
+    const segments = try detect_speech_segments(gpa, pcm, sample_rate, cfg);
+    defer gpa.free(segments);
+
+    try std.testing.expectEqual(@as(usize, 2), segments.len);
+    // 第一段大约在 0-400ms
+    try std.testing.expect(segments[0].start_ms <= 100);
+    try std.testing.expect(segments[0].end_ms >= 300 and segments[0].end_ms <= 500);
+    // 第二段大约在 700-1100ms
+    try std.testing.expect(segments[1].start_ms >= 600 and segments[1].start_ms <= 800);
+    try std.testing.expect(segments[1].end_ms >= 1000 and segments[1].end_ms <= 1200);
 }
