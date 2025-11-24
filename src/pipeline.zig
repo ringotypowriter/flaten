@@ -4,6 +4,10 @@ const audio_segmenter = @import("audio_segmenter.zig");
 const asr_sherpa = @import("asr_sherpa.zig");
 const ffmpeg_adapter = @import("ffmpeg_adapter.zig");
 
+// Pipeline 级别的字幕边界 padding（毫秒），在构建 SRT 时使用。
+const pre_pad_ms: u32 = 150;
+const post_pad_ms: u32 = 150;
+
 pub const PipelineConfig = struct {
     sample_rate: u32 = 16_000,
     min_speech_ms: u32 = 300,
@@ -120,8 +124,12 @@ pub fn transcribe_video_to_srt(
         try results_per_segment.append(seg_results);
     }
 
-    // 4. 将局部时间映射回原始时间线，生成最终 SRT。
-    const srt = try buildSrtFromSegments(allocator, segments, results_per_segment.items);
+    // 4. 在构建 SRT 前，对时间线做轻量 padding，让字幕稍微提前出现、延后消失。
+    const padded_segments = try padSegmentsForSrt(allocator, segments);
+    defer allocator.free(padded_segments);
+
+    // 5. 将局部时间映射回原始时间线，生成最终 SRT。
+    const srt = try buildSrtFromSegments(allocator, padded_segments, results_per_segment.items);
     cleanupAsrResults(&results_per_segment);
     return srt;
 }
@@ -193,6 +201,35 @@ test "transcribe_video_to_srt runs on example mp4 (stub ASR)" {
     if (srt.len > 0) {
         try std.testing.expect(std.mem.containsAtLeast(u8, srt, 1, " --> "));
     }
+}
+
+fn padSegmentsForSrt(
+    allocator: std.mem.Allocator,
+    segments: []const audio_segmenter.SpeechSegment,
+) ![]audio_segmenter.SpeechSegment {
+    const out = try allocator.alloc(audio_segmenter.SpeechSegment, segments.len);
+
+    for (segments, 0..) |seg, i| {
+        var start = seg.start_ms;
+        var end = seg.end_ms;
+
+        if (pre_pad_ms > 0) {
+            if (start > pre_pad_ms) {
+                start -= pre_pad_ms;
+            } else {
+                start = 0;
+            }
+        }
+
+        end += post_pad_ms;
+
+        out[i] = .{
+            .start_ms = start,
+            .end_ms = end,
+        };
+    }
+
+    return out;
 }
 
 fn cleanupAsrResults(list: *std.array_list.Managed([]asr_sherpa.SegmentResult)) void {
