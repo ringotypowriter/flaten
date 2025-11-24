@@ -223,5 +223,7 @@ Ideas for future iterations:
 
 ## License
 
-This repository itself does not ship a license file yet; treat it as private/internal code unless explicitly licensed otherwise. Third‑party components (sherpa-onnx, ffmpeg, onnxruntime, etc.) are subject to their own licenses and terms. 请务必遵守它们各自的授权要求。
+This project is licensed under the **Apache License 2.0**.  
+See the `LICENSE` file (or add one if missing) for full terms.
 
+Third‑party components (sherpa-onnx, ffmpeg, onnxruntime, etc.) are subject to their own licenses and terms; make sure you comply with them when redistributing or deploying binaries built from this repository.
