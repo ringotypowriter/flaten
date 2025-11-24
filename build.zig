@@ -172,12 +172,12 @@ pub fn build(b: *std.Build) void {
     mod_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
     mod_tests.root_module.linkSystemLibrary("onnxruntime", .{});
 
-    // A run step that will run the test executable.
+    // A run step that will run the test executable for the root library module.
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
     // Creates an executable that will run `test` blocks from the executable's
     // root module. Note that test executables only test one module at a time,
-    // hence why we have to create two separate ones.
+    // hence why we have to create separate ones.
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
     });
@@ -192,15 +192,164 @@ pub fn build(b: *std.Build) void {
     exe_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
     exe_tests.root_module.linkSystemLibrary("onnxruntime", .{});
 
-    // A run step that will run the second test executable.
+    // A run step that will run the test executable for the CLI root module.
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
+    // Additional per-module tests so that `zig build test` covers all files
+    // under src/ that define test blocks.
+    const subtitle_writer_tests = b.addTest(.{
+        .name = "subtitle_writer-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/subtitle_writer.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    for (libs) |name| {
+        subtitle_writer_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
+    }
+    subtitle_writer_tests.linkLibC();
+    subtitle_writer_tests.linkLibCpp();
+    subtitle_writer_tests.root_module.addIncludePath(b.path(sherpa_include));
+    subtitle_writer_tests.root_module.addLibraryPath(b.path(sherpa_lib));
+    subtitle_writer_tests.root_module.addRPath(b.path(sherpa_lib));
+    subtitle_writer_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    subtitle_writer_tests.root_module.linkSystemLibrary("onnxruntime", .{});
+    const run_subtitle_writer_tests = b.addRunArtifact(subtitle_writer_tests);
+
+    const cli_options_tests = b.addTest(.{
+        .name = "cli_options-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/cli_options.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    for (libs) |name| {
+        cli_options_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
+    }
+    cli_options_tests.linkLibC();
+    cli_options_tests.linkLibCpp();
+    cli_options_tests.root_module.addIncludePath(b.path(sherpa_include));
+    cli_options_tests.root_module.addLibraryPath(b.path(sherpa_lib));
+    cli_options_tests.root_module.addRPath(b.path(sherpa_lib));
+    cli_options_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    cli_options_tests.root_module.linkSystemLibrary("onnxruntime", .{});
+    const run_cli_options_tests = b.addRunArtifact(cli_options_tests);
+
+    const audio_segmenter_tests = b.addTest(.{
+        .name = "audio_segmenter-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/audio_segmenter.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    for (libs) |name| {
+        audio_segmenter_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
+    }
+    audio_segmenter_tests.linkLibC();
+    audio_segmenter_tests.linkLibCpp();
+    audio_segmenter_tests.root_module.addIncludePath(b.path(sherpa_include));
+    audio_segmenter_tests.root_module.addLibraryPath(b.path(sherpa_lib));
+    audio_segmenter_tests.root_module.addRPath(b.path(sherpa_lib));
+    audio_segmenter_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    audio_segmenter_tests.root_module.linkSystemLibrary("onnxruntime", .{});
+    const run_audio_segmenter_tests = b.addRunArtifact(audio_segmenter_tests);
+
+    const ffmpeg_adapter_tests = b.addTest(.{
+        .name = "ffmpeg_adapter-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/ffmpeg_adapter.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    for (libs) |name| {
+        ffmpeg_adapter_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
+    }
+    ffmpeg_adapter_tests.linkLibC();
+    ffmpeg_adapter_tests.linkLibCpp();
+    ffmpeg_adapter_tests.root_module.addIncludePath(b.path(sherpa_include));
+    ffmpeg_adapter_tests.root_module.addLibraryPath(b.path(sherpa_lib));
+    ffmpeg_adapter_tests.root_module.addRPath(b.path(sherpa_lib));
+    ffmpeg_adapter_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    ffmpeg_adapter_tests.root_module.linkSystemLibrary("onnxruntime", .{});
+    const run_ffmpeg_adapter_tests = b.addRunArtifact(ffmpeg_adapter_tests);
+
+    const asr_sherpa_tests = b.addTest(.{
+        .name = "asr_sherpa-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/asr_sherpa.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    for (libs) |name| {
+        asr_sherpa_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
+    }
+    asr_sherpa_tests.linkLibC();
+    asr_sherpa_tests.linkLibCpp();
+    asr_sherpa_tests.root_module.addIncludePath(b.path(sherpa_include));
+    asr_sherpa_tests.root_module.addLibraryPath(b.path(sherpa_lib));
+    asr_sherpa_tests.root_module.addRPath(b.path(sherpa_lib));
+    asr_sherpa_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    asr_sherpa_tests.root_module.linkSystemLibrary("onnxruntime", .{});
+    const run_asr_sherpa_tests = b.addRunArtifact(asr_sherpa_tests);
+
+    const pipeline_tests = b.addTest(.{
+        .name = "pipeline-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pipeline.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    for (libs) |name| {
+        pipeline_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
+    }
+    pipeline_tests.linkLibC();
+    pipeline_tests.linkLibCpp();
+    pipeline_tests.root_module.addIncludePath(b.path(sherpa_include));
+    pipeline_tests.root_module.addLibraryPath(b.path(sherpa_lib));
+    pipeline_tests.root_module.addRPath(b.path(sherpa_lib));
+    pipeline_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    pipeline_tests.root_module.linkSystemLibrary("onnxruntime", .{});
+    const run_pipeline_tests = b.addRunArtifact(pipeline_tests);
+
+    const model_manager_tests = b.addTest(.{
+        .name = "model_manager-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/model_manager.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    for (libs) |name| {
+        model_manager_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
+    }
+    model_manager_tests.linkLibC();
+    model_manager_tests.linkLibCpp();
+    model_manager_tests.root_module.addIncludePath(b.path(sherpa_include));
+    model_manager_tests.root_module.addLibraryPath(b.path(sherpa_lib));
+    model_manager_tests.root_module.addRPath(b.path(sherpa_lib));
+    model_manager_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    model_manager_tests.root_module.linkSystemLibrary("onnxruntime", .{});
+    const run_model_manager_tests = b.addRunArtifact(model_manager_tests);
+
     // A top level step for running all tests. dependOn can be called multiple
-    // times and since the two run steps do not depend on one another, this will
-    // make the two of them run in parallel.
+    // times and since these run steps do not depend on one another, this will
+    // make all of them run in parallel.
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+    test_step.dependOn(&run_subtitle_writer_tests.step);
+    test_step.dependOn(&run_cli_options_tests.step);
+    test_step.dependOn(&run_audio_segmenter_tests.step);
+    test_step.dependOn(&run_ffmpeg_adapter_tests.step);
+    test_step.dependOn(&run_asr_sherpa_tests.step);
+    test_step.dependOn(&run_pipeline_tests.step);
+    test_step.dependOn(&run_model_manager_tests.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //

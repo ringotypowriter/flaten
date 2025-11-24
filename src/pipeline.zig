@@ -9,7 +9,7 @@ pub const PipelineConfig = struct {
     min_silence_ms: u32 = 200,
 };
 
-pub const Error = error{Todo};
+pub const Error = error{ Todo, OutOfMemory };
 
 /// Placeholder pipeline that should wire ffmpeg -> VAD -> ASR -> SRT.
 pub fn transcribe_video_to_srt(

@@ -11,7 +11,7 @@ pub fn build_ffmpeg_cmd(args: FfmpegArgs, allocator: std.mem.Allocator) ![][]con
     _ = allocator; // we use the page allocator to avoid tying lifetimes to caller
 
     // Construct argv for piping raw PCM s16le to stdout.
-    var list = std.ArrayList([]const u8).init(std.heap.page_allocator);
+    var list = std.array_list.Managed([]const u8).init(std.heap.page_allocator);
     defer list.deinit();
 
     try list.append("ffmpeg");

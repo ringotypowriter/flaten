@@ -12,8 +12,9 @@ pub const VadConfig = struct {
     min_silence_ms: u32 = 200,
 };
 
-/// Placeholder VAD implementation; to be filled in later TDD steps.
-pub const Error = error{Todo};
+/// Placeholder VAD implementation used by the pipeline.
+/// 后续可以继续扩展错误类型。
+pub const Error = error{ Todo, OutOfMemory };
 
 pub fn detect_speech_segments(
     allocator: std.mem.Allocator,
@@ -21,11 +22,71 @@ pub fn detect_speech_segments(
     sample_rate: u32,
     config: VadConfig,
 ) Error![]SpeechSegment {
-    _ = allocator;
-    _ = pcm;
-    _ = sample_rate;
-    _ = config;
-    return Error.Todo;
+    if (pcm.len == 0 or sample_rate == 0) {
+        return &.{};
+    }
+
+    const frame_samples: usize = @intCast((@as(u64, config.frame_ms) * sample_rate) / 1000);
+    if (frame_samples == 0) {
+        return &.{};
+    }
+
+    var segments = std.array_list.Managed(SpeechSegment).init(allocator);
+    errdefer segments.deinit();
+
+    var in_speech = false;
+    var seg_start_ms: u64 = 0;
+    var last_voiced_end_ms: u64 = 0;
+
+    var i: usize = 0;
+    while (i < pcm.len) : (i += frame_samples) {
+        const frame_start = i;
+        const frame_end = @min(pcm.len, i + frame_samples);
+
+        var max_abs: i32 = 0;
+        var j = frame_start;
+        while (j < frame_end) : (j += 1) {
+            const v: i32 = @intCast(pcm[j]);
+            const abs_v = if (v < 0) -v else v;
+            if (abs_v > max_abs) max_abs = abs_v;
+        }
+
+        const frame_ms_start: u64 = @intCast((@as(u64, frame_start) * 1000) / sample_rate);
+        const frame_ms_end: u64 = @intCast((@as(u64, frame_end) * 1000) / sample_rate);
+
+        const voiced = max_abs >= config.energy_threshold;
+
+        if (voiced) {
+            if (!in_speech) {
+                in_speech = true;
+                seg_start_ms = frame_ms_start;
+            }
+            last_voiced_end_ms = frame_ms_end;
+        } else if (in_speech) {
+            // 结束一个语音段，检查是否满足最小持续时间
+            const duration = last_voiced_end_ms - seg_start_ms;
+            if (duration >= config.min_speech_ms) {
+                try segments.append(.{
+                    .start_ms = seg_start_ms,
+                    .end_ms = last_voiced_end_ms,
+                });
+            }
+            in_speech = false;
+        }
+    }
+
+    // 音频结尾仍在语音段中，做一次收尾
+    if (in_speech) {
+        const duration = last_voiced_end_ms - seg_start_ms;
+        if (duration >= config.min_speech_ms) {
+            try segments.append(.{
+                .start_ms = seg_start_ms,
+                .end_ms = last_voiced_end_ms,
+            });
+        }
+    }
+
+    return segments.toOwnedSlice();
 }
 
 test "single voiced region is detected" {
@@ -43,6 +104,7 @@ test "single voiced region is detected" {
     for (pcm[2 * sample_rate ..]) |*s| s.* = 0;
 
     const segments = try detect_speech_segments(gpa, pcm, sample_rate, .{});
+    defer gpa.free(segments);
     // expect one segment around 1000-2000ms (allowing frame jitter later)
     try std.testing.expectEqual(@as(usize, 1), segments.len);
     try std.testing.expect(segments[0].start_ms <= 1100 and segments[0].start_ms >= 900);
@@ -64,5 +126,6 @@ test "short blips below min_speech_ms are ignored" {
 
     const cfg = VadConfig{ .min_speech_ms = 200 };
     const segments = try detect_speech_segments(gpa, pcm, sample_rate, cfg);
+    defer gpa.free(segments);
     try std.testing.expectEqual(@as(usize, 0), segments.len);
 }
