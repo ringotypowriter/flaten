@@ -12,9 +12,8 @@ pub const VadConfig = struct {
     min_silence_ms: u32 = 200,
 };
 
-/// Placeholder VAD implementation used by the pipeline.
-/// 后续可以继续扩展错误类型。
-pub const Error = error{ Todo, OutOfMemory };
+/// VAD 错误类型。目前只可能出现内存不足。
+pub const Error = error{ OutOfMemory };
 
 pub fn detect_speech_segments(
     allocator: std.mem.Allocator,

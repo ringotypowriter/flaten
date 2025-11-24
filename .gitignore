@@ -2,3 +2,6 @@
 .DS_Store
 model.tar.bz2
 sherpa-model/*
+test_resources/test.mp4
+zig-out/
+out.srt
