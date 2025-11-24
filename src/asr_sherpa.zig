@@ -23,9 +23,14 @@ pub const Error = error{
     DownloadFailed,
 };
 
-/// Sherpa 模型配置（目前默认使用离线 paraformer）。
+/// 默认使用的 zipformer 转导模型文件名（对应 sherpa-onnx-zipformer-zh-en-2023-11-22）。
+const encoder_filename = "encoder-epoch-34-avg-19.onnx";
+const decoder_filename = "decoder-epoch-34-avg-19.onnx";
+const joiner_filename = "joiner-epoch-34-avg-19.onnx";
+
+/// Sherpa 模型配置（目前默认使用离线 zipformer transducer）。
 pub const Config = struct {
-    /// 模型目录，应包含 tokens.txt 和 model.onnx/model.int8.onnx。
+    /// 模型目录，应包含 tokens.txt 以及 encoder/decoder/joiner onnx。
     model_dir: []const u8,
     /// ONNX Runtime provider：cpu/cuda/mps 等。
     provider: []const u8 = "cpu",
@@ -74,21 +79,27 @@ pub fn recognizeWithRealModel(allocator: std.mem.Allocator, wav_data: []const u8
 }
 
 fn recognizeWithModel(allocator: std.mem.Allocator, wav_data: []const u8, cfg: Config) ![]SegmentResult {
-    const model_path = try joinPathZ(allocator, cfg.model_dir, model_manager.default_model_file);
-    defer allocator.free(model_path);
+    const encoder_path = try joinPathZ(allocator, cfg.model_dir, encoder_filename);
+    defer allocator.free(encoder_path);
+    const decoder_path = try joinPathZ(allocator, cfg.model_dir, decoder_filename);
+    defer allocator.free(decoder_path);
+    const joiner_path = try joinPathZ(allocator, cfg.model_dir, joiner_filename);
+    defer allocator.free(joiner_path);
     const tokens_path = try joinPathZ(allocator, cfg.model_dir, model_manager.default_tokens_file);
     defer allocator.free(tokens_path);
 
-    if (!fileExists(model_path) or !fileExists(tokens_path)) {
+    if (!fileExists(encoder_path) or !fileExists(decoder_path) or !fileExists(joiner_path) or !fileExists(tokens_path)) {
         return Error.MissingModel;
     }
 
-    // 构造离线识别配置（使用 paraformer 路径）。
+    // 构造离线识别配置（使用 transducer/zipformer 路径）。
     var rec_cfg = std.mem.zeroes(c.SherpaOnnxOfflineRecognizerConfig);
     rec_cfg.feat_config.sample_rate = @intCast(cfg.sample_rate);
     rec_cfg.feat_config.feature_dim = @intCast(cfg.feature_dim);
 
-    rec_cfg.model_config.paraformer.model = model_path.ptr;
+    rec_cfg.model_config.transducer.encoder = encoder_path.ptr;
+    rec_cfg.model_config.transducer.decoder = decoder_path.ptr;
+    rec_cfg.model_config.transducer.joiner = joiner_path.ptr;
     rec_cfg.model_config.tokens = tokens_path.ptr;
     rec_cfg.model_config.num_threads = cfg.num_threads;
 
@@ -96,7 +107,7 @@ fn recognizeWithModel(allocator: std.mem.Allocator, wav_data: []const u8, cfg: C
     defer allocator.free(provider_z);
     rec_cfg.model_config.provider = provider_z.ptr;
 
-    const model_type_z = try toCStringConst(allocator, "paraformer");
+    const model_type_z = try toCStringConst(allocator, "transducer");
     defer allocator.free(model_type_z);
     rec_cfg.model_config.model_type = model_type_z.ptr;
 
@@ -114,25 +125,16 @@ fn recognizeWithModel(allocator: std.mem.Allocator, wav_data: []const u8, cfg: C
     if (stream == null) return Error.StreamInitFailed;
     defer c.SherpaOnnxDestroyOfflineStream(stream);
 
-    // 将 16-bit PCM 转成 float 并送入 sherpa。
-    const sample_count = wav_data.len / 2;
-    var samples = try allocator.alloc(f32, sample_count);
-    defer allocator.free(samples);
-
-    var i: usize = 0;
-    while (i < sample_count) : (i += 1) {
-        const lo: u16 = wav_data[i * 2];
-        const hi: u16 = wav_data[i * 2 + 1];
-        const packed_val: u16 = (hi << 8) | lo;
-        const val: i16 = @bitCast(packed_val);
-        samples[i] = @as(f32, @floatFromInt(val)) / 32768.0;
-    }
+    // 自动适配输入数据（WAV 容器 / 裸 PCM）、采样率与声道数，
+    // 统一转换为 cfg.sample_rate 的单声道 float32 PCM。
+    const prepared = try prepareAudioForSherpa(allocator, wav_data, cfg.sample_rate);
+    defer allocator.free(prepared.samples);
 
     c.SherpaOnnxAcceptWaveformOffline(
         stream,
-        @intCast(cfg.sample_rate),
-        samples.ptr,
-        @intCast(samples.len),
+        @intCast(prepared.sample_rate),
+        prepared.samples.ptr,
+        @intCast(prepared.samples.len),
     );
     c.SherpaOnnxDecodeOfflineStream(recognizer, stream);
 
@@ -146,7 +148,7 @@ fn recognizeWithModel(allocator: std.mem.Allocator, wav_data: []const u8, cfg: C
     };
 
     const owned_text = try allocator.dupe(u8, text_slice);
-    const duration_ms: u64 = if (cfg.sample_rate == 0) 0 else (@as(u64, samples.len) * 1000) / cfg.sample_rate;
+    const duration_ms: u64 = if (prepared.sample_rate == 0) 0 else (@as(u64, prepared.samples.len) * 1000) / prepared.sample_rate;
 
     const segs = try allocator.alloc(SegmentResult, 1);
     segs[0] = .{ .start_ms = 0, .end_ms = duration_ms, .text = owned_text };
@@ -177,6 +179,215 @@ fn joinPathZ(allocator: std.mem.Allocator, a: []const u8, b: []const u8) ![:0]u8
 
 fn toCStringConst(allocator: std.mem.Allocator, text: []const u8) ![:0]const u8 {
     return try allocator.dupeZ(u8, text);
+}
+
+const PreparedAudio = struct {
+    /// 单声道、归一化到 [-1, 1] 的 float32 PCM。
+    samples: []f32,
+    /// samples 对应的真实采样率（最终会是 target_sample_rate）。
+    sample_rate: u32,
+};
+
+const WavPcm16 = struct {
+    data: []align(1) const i16,
+    sample_rate: u32,
+    num_channels: u16,
+};
+
+fn prepareAudioForSherpa(
+    allocator: std.mem.Allocator,
+    raw: []const u8,
+    target_sample_rate: u32,
+) !PreparedAudio {
+    if (target_sample_rate == 0) {
+        return PreparedAudio{ .samples = &.{}, .sample_rate = 0 };
+    }
+
+    if (tryParseWavPcm16(raw)) |wav| {
+        const mono = try pcm16InterleavedToMonoF32(allocator, wav.data, wav.num_channels);
+        errdefer allocator.free(mono);
+
+        if (wav.sample_rate == target_sample_rate) {
+            return PreparedAudio{
+                .samples = mono,
+                .sample_rate = target_sample_rate,
+            };
+        }
+
+        const resampled = try resampleLinear(allocator, mono, wav.sample_rate, target_sample_rate);
+        allocator.free(mono);
+        return PreparedAudio{
+            .samples = resampled,
+            .sample_rate = target_sample_rate,
+        };
+    }
+
+    // 回退：按裸 s16le、单声道、target_sample_rate 解释。
+    const sample_count = raw.len / 2;
+    var samples = try allocator.alloc(f32, sample_count);
+    var i: usize = 0;
+    while (i < sample_count) : (i += 1) {
+        const lo: u16 = raw[i * 2];
+        const hi: u16 = raw[i * 2 + 1];
+        const packed_val: u16 = (hi << 8) | lo;
+        const val: i16 = @bitCast(packed_val);
+        samples[i] = @as(f32, @floatFromInt(val)) / 32768.0;
+    }
+
+    return PreparedAudio{
+        .samples = samples,
+        .sample_rate = target_sample_rate,
+    };
+}
+
+fn tryParseWavPcm16(raw: []const u8) ?WavPcm16 {
+    if (raw.len < 44) return null;
+    if (!std.mem.eql(u8, raw[0..4], "RIFF")) return null;
+    if (!std.mem.eql(u8, raw[8..12], "WAVE")) return null;
+
+    var pos: usize = 12;
+
+    var audio_format: u16 = 0;
+    var num_channels: u16 = 0;
+    var sample_rate: u32 = 0;
+    var bits_per_sample: u16 = 0;
+    var data_offset: usize = 0;
+    var data_size: u32 = 0;
+
+    while (pos + 8 <= raw.len) {
+        const id = raw[pos..pos + 4];
+        const chunk_size = readLeU32(raw, pos + 4) orelse break;
+        const data_start = pos + 8;
+
+        if (data_start > raw.len) break;
+        const data_end = data_start + @as(usize, chunk_size);
+        if (data_end > raw.len) break;
+
+        if (std.mem.eql(u8, id, "fmt ")) {
+            if (chunk_size < 16) return null;
+
+            audio_format = readLeU16(raw, data_start + 0) orelse return null;
+            num_channels = readLeU16(raw, data_start + 2) orelse return null;
+            sample_rate = readLeU32(raw, data_start + 4) orelse return null;
+            bits_per_sample = readLeU16(raw, data_start + 14) orelse return null;
+        } else if (std.mem.eql(u8, id, "data")) {
+            data_offset = data_start;
+            data_size = chunk_size;
+        }
+
+        var advance = @as(usize, chunk_size);
+        if ((advance & 1) != 0) {
+            advance += 1; // 对齐到偶数字节
+        }
+        pos = data_start + advance;
+    }
+
+    if (audio_format != 1) return null; // 只支持 PCM
+    if (bits_per_sample != 16) return null;
+    if (num_channels == 0) return null;
+    if (data_offset == 0 or data_size == 0) return null;
+
+    const max_size = raw.len - data_offset;
+    const used_size = @min(@as(usize, data_size), max_size);
+    if (used_size < 2) return null;
+
+    const sample_bytes = used_size - (used_size % 2);
+    const bytes = raw[data_offset .. data_offset + sample_bytes];
+    const pcm = std.mem.bytesAsSlice(i16, bytes);
+
+    return WavPcm16{
+        .data = pcm,
+        .sample_rate = sample_rate,
+        .num_channels = num_channels,
+    };
+}
+
+fn readLeU16(raw: []const u8, index: usize) ?u16 {
+    if (index + 1 >= raw.len) return null;
+    const b0: u16 = raw[index];
+    const b1: u16 = raw[index + 1];
+    return b0 | (b1 << 8);
+}
+
+fn readLeU32(raw: []const u8, index: usize) ?u32 {
+    if (index + 3 >= raw.len) return null;
+    const b0: u32 = raw[index];
+    const b1: u32 = raw[index + 1];
+    const b2: u32 = raw[index + 2];
+    const b3: u32 = raw[index + 3];
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
+fn pcm16InterleavedToMonoF32(
+    allocator: std.mem.Allocator,
+    pcm: []align(1) const i16,
+    num_channels: u16,
+) ![]f32 {
+    if (num_channels == 0) {
+        return &.{};
+    }
+
+    const ch: usize = @intCast(num_channels);
+    if (pcm.len == 0 or ch == 0) {
+        return &.{};
+    }
+
+    const frame_count = pcm.len / ch;
+    var out = try allocator.alloc(f32, frame_count);
+
+    var frame: usize = 0;
+    while (frame < frame_count) : (frame += 1) {
+        var acc: i32 = 0;
+        var ch_idx: usize = 0;
+        const base = frame * ch;
+        while (ch_idx < ch) : (ch_idx += 1) {
+            acc += pcm[base + ch_idx];
+        }
+        const avg = @as(f32, @floatFromInt(acc)) / @as(f32, @floatFromInt(ch));
+        out[frame] = avg / 32768.0;
+    }
+
+    return out;
+}
+
+fn resampleLinear(
+    allocator: std.mem.Allocator,
+    input: []const f32,
+    src_rate: u32,
+    dst_rate: u32,
+) ![]f32 {
+    if (input.len == 0 or src_rate == 0 or dst_rate == 0 or src_rate == dst_rate) {
+        // 不需要重采样，直接拷贝一份，避免悬垂引用。
+        return try allocator.dupe(f32, input);
+    }
+
+    const ratio = @as(f64, @floatFromInt(dst_rate)) / @as(f64, @floatFromInt(src_rate));
+    const in_len_f = @as(f64, @floatFromInt(input.len));
+    const out_len_f = in_len_f * ratio;
+    const out_len: usize = @intFromFloat(@round(out_len_f));
+    if (out_len == 0) {
+        return &.{};
+    }
+
+    var out = try allocator.alloc(f32, out_len);
+
+    var i: usize = 0;
+    while (i < out.len) : (i += 1) {
+        const t = @as(f64, @floatFromInt(i)) / ratio;
+        const idx = @min(@as(usize, @intFromFloat(@floor(t))), input.len - 1);
+        const frac = t - @floor(t);
+
+        if (idx + 1 < input.len) {
+            const v0 = input[idx];
+            const v1 = input[idx + 1];
+            const mixed = (@as(f64, v0) * (1.0 - frac)) + (@as(f64, v1) * frac);
+            out[i] = @as(f32, @floatCast(mixed));
+        } else {
+            out[i] = input[idx];
+        }
+    }
+
+    return out;
 }
 
 test "recognize returns at least one keyword for hello clip" {
@@ -227,7 +438,15 @@ test "integration: recognize real wav returns non-empty text" {
 
     try std.testing.expect(results.len > 0);
 
-    std.debug.print("ASR Results: {any}\n", .{results});
+    std.debug.print("ASR Results:\n", .{});
+        for (results, 0..) |r, i| {
+            const text_slice = r.text[0..];
+
+            std.debug.print(
+                "  [{d}] {d}–{d} ms: {s}\n",
+                .{ i, r.start_ms, r.end_ms, text_slice },
+            );
+        }
 
     var non_empty = false;
     for (results) |seg| {

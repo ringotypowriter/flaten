@@ -5,10 +5,15 @@ pub const Error = error{
     DownloadFailed,
 };
 
-/// 默认使用的 paraformer 模型信息。
+/// 默认使用的模型信息：zipformer 小型中英双语模型。
+/// 链接来源：sherpa-onnx 官方发布的
+/// `sherpa-onnx-zipformer-zh-en-2023-11-22` 模型归档。
+/// 注意：模型会被统一解压到一个固定目录名下，避免因为模型日期变化导致路径改变。
 pub const default_model_archive_url =
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-paraformer-zh-int8-2025-10-07.tar.bz2";
-pub const default_model_dir_name = "sherpa-onnx-paraformer-zh-int8-2025-10-07";
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-zh-en-2023-11-22.tar.bz2";
+/// 固定的模型目录名（相对于 base_dir），与具体模型无关。
+/// 以后如果更换模型，只需调整下载 URL 即可，目录仍然是 `sherpa-model/`。
+pub const default_model_dir_name = "sherpa-model";
 pub const default_model_file = "model.int8.onnx";
 pub const default_tokens_file = "tokens.txt";
 
@@ -52,16 +57,16 @@ pub fn ensureModelDir(allocator: std.mem.Allocator, cfg: Config) ![]u8 {
 
     try std.fs.cwd().makePath(model_dir);
 
-    const model_path = try joinPath(allocator, model_dir, cfg.model_file);
-    defer allocator.free(model_path);
     const tokens_path = try joinPath(allocator, model_dir, cfg.tokens_file);
     defer allocator.free(tokens_path);
 
-    if (!fileExists(model_path) or !fileExists(tokens_path)) {
+    // 这里只强制要求 tokens 文件存在，用于判断模型是否已经到位。
+    // 具体使用哪些 ONNX 文件由上层（如 asr_sherpa）自行决定。
+    if (!fileExists(tokens_path)) {
         const downloader = cfg.download_fn orelse defaultDownloadAndExtract;
         try downloader(allocator, cfg.base_dir, cfg.model_dir_name, cfg.download_ctx);
 
-        if (!fileExists(model_path) or !fileExists(tokens_path)) {
+        if (!fileExists(tokens_path)) {
             return Error.DownloadFailed;
         }
     }
@@ -77,16 +82,14 @@ fn defaultDownloadAndExtract(
     ctx: ?*anyopaque,
 ) !void {
     _ = ctx;
-    _ = model_dir_name;
-    // 当前 archive 自带目录名，解压后会包含 default_model_dir_name。
 
-    // 默认下载到程序运行的 pwd（base_dir 通常为 "."）。
+    // 默认下载到 base_dir/model_dir_name，tar 时去掉归档里的最外层目录。
     var cmd_buf = std.array_list.Managed(u8).init(allocator);
     errdefer cmd_buf.deinit();
 
     try cmd_buf.writer().print(
-        "mkdir -p '{s}' && cd '{s}' && curl -L '{s}' -o model.tar.bz2 && tar xf model.tar.bz2 && rm model.tar.bz2",
-        .{ base_dir, base_dir, default_model_archive_url },
+        "mkdir -p '{s}/{s}' && cd '{s}/{s}' && curl -L '{s}' -o model.tar.bz2 && tar xf model.tar.bz2 --strip-components 1 && rm model.tar.bz2",
+        .{ base_dir, model_dir_name, base_dir, model_dir_name, default_model_archive_url },
     );
     const cmd = try cmd_buf.toOwnedSlice();
     defer allocator.free(cmd);

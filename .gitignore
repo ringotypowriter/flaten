@@ -1,4 +1,4 @@
 .zig-cache/*
 .DS_Store
 model.tar.bz2
-sherpa-onnx-paraformer-zh-int8-2025-10-07/
+sherpa-model/*
