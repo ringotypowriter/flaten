@@ -86,7 +86,6 @@ pub fn build(b: *std.Build) void {
     // Discover libraries via pkg-config without hardcoding paths. Users can
     // override with PKG_CONFIG_PATH (e.g. $HOME/.local/sherpa-onnx/install/lib/pkgconfig).
     const libs = &[_][]const u8{
-        "sherpa-onnx",
         "avformat",
         "avcodec",
         "avutil",
@@ -98,6 +97,31 @@ pub fn build(b: *std.Build) void {
 
     exe.linkLibC();
     exe.linkLibCpp();
+
+    // Bundle sherpa-onnx binaries for macOS (universal2) and Linux x86_64 so
+    // users don't need to install them system-wide. We pick a directory based
+    // on the target OS.
+    const sherpa_root = "third_party/sherpa-onnx/v1.12.17";
+    const sherpa_dir = switch (target.result.os.tag) {
+        .macos => sherpa_root ++ "/macos-universal",
+        .linux => sherpa_root ++ "/linux-x86_64",
+        else => sherpa_root ++ "/linux-x86_64", // default to linux build for other Unix-like targets
+    };
+    const sherpa_include = b.pathJoin(&.{ sherpa_dir, "include" });
+    const sherpa_lib = b.pathJoin(&.{ sherpa_dir, "lib" });
+
+    exe.root_module.addIncludePath(b.path(sherpa_include));
+    exe.root_module.addLibraryPath(b.path(sherpa_lib));
+    exe.root_module.addRPath(b.path(sherpa_lib));
+    exe.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    exe.root_module.linkSystemLibrary("onnxruntime", .{});
+
+    const install_sherpa = b.addInstallDirectory(.{
+        .source_dir = b.path(sherpa_lib),
+        .install_dir = .lib,
+        .install_subdir = "sherpa-onnx",
+    });
+    exe.step.dependOn(&install_sherpa.step);
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
@@ -142,6 +166,11 @@ pub fn build(b: *std.Build) void {
     }
     mod_tests.linkLibC();
     mod_tests.linkLibCpp();
+    mod_tests.root_module.addIncludePath(b.path(sherpa_include));
+    mod_tests.root_module.addLibraryPath(b.path(sherpa_lib));
+    mod_tests.root_module.addRPath(b.path(sherpa_lib));
+    mod_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    mod_tests.root_module.linkSystemLibrary("onnxruntime", .{});
 
     // A run step that will run the test executable.
     const run_mod_tests = b.addRunArtifact(mod_tests);
@@ -157,6 +186,11 @@ pub fn build(b: *std.Build) void {
     }
     exe_tests.linkLibC();
     exe_tests.linkLibCpp();
+    exe_tests.root_module.addIncludePath(b.path(sherpa_include));
+    exe_tests.root_module.addLibraryPath(b.path(sherpa_lib));
+    exe_tests.root_module.addRPath(b.path(sherpa_lib));
+    exe_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    exe_tests.root_module.linkSystemLibrary("onnxruntime", .{});
 
     // A run step that will run the second test executable.
     const run_exe_tests = b.addRunArtifact(exe_tests);

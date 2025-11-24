@@ -48,7 +48,6 @@ test "build_ffmpeg_cmd includes essential flags" {
     const cmd = try build_ffmpeg_cmd(.{ .input_path = "video.mp4", .sample_rate = 16_000, .mono = true }, gpa);
     defer {
         // allocated buffers will be freed once implemented; currently empty
-        _ = gpa; _ = cmd;
     }
 
     // Expect substrings regardless of order

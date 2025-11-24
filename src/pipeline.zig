@@ -35,8 +35,6 @@ test "pipeline uses injected mocks to produce SRT" {
     defer gpa.free(pcm);
     for (pcm) |*s| s.* = 0;
     for (pcm[0 .. sample_rate / 2]) |*s| s.* = 3000;
-    _ = pcm; // placeholder until real ffmpeg integration
-
     // pretend VAD returns one segment 0-500ms
     const segments = [_]audio_segmenter.SpeechSegment{.{ .start_ms = 0, .end_ms = 500 }};
     _ = segments;
