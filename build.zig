@@ -58,7 +58,7 @@ pub fn build(b: *std.Build) void {
     // If neither case applies to you, feel free to delete the declaration you
     // don't need and to put everything under a single module.
     const exe = b.addExecutable(.{
-        .name = "flaten",
+        .name = "flaten-core",
         .root_module = b.createModule(.{
             // b.createModule defines a new module just like b.addModule but,
             // unlike b.addModule, it does not expose the module to consumers of
@@ -154,6 +154,19 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
+
+    // Wrapper executable: checks ffmpeg availability then forwards to flaten.
+    const wrapper = b.addExecutable(.{
+        .name = "flaten",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/wrapper.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    wrapper.linkLibC();
+    wrapper.linkLibCpp();
+    b.installArtifact(wrapper);
 
     // Creates an executable that will run `test` blocks from the provided module.
     // Here `mod` needs to define a target, which is why earlier we made sure to

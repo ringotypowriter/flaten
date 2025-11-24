@@ -5,3 +5,4 @@ sherpa-model/*
 test_resources/test.mp4
 zig-out/
 out.srt
+dist
