@@ -112,6 +112,30 @@ If you want to skip the ffmpeg check, call the core directly:
 ./bin/flaten-core --input video.mp4 --output subtitles.srt
 ```
 
+You can cross-compile and package in one step by passing a target triple; the
+staging directory will include the target in its name:
+
+```bash
+./scripts/package_release.sh --target x86_64-linux-gnu
+# output: dist/flaten-deploy-x86_64-linux-gnu/...
+```
+
+### Cross-compiling (e.g., macOS → Linux x86_64)
+
+Zig can cross-compile out of the box, but you must provide target-side deps:
+
+- **sherpa-onnx / onnxruntime**: this repo already ships `third_party/sherpa-onnx/v1.12.17/linux-x86_64/`, and `build.zig` will pick it when `-Dtarget=x86_64-linux-gnu` is set.
+- **ffmpeg**: you need the target platform’s pkg-config files and shared libs (`*.pc` + `.so`). Point `PKG_CONFIG_PATH` to that ffmpeg’s `lib/pkgconfig`.
+
+Example (build Linux x86_64 Release on macOS):
+
+```bash
+export PKG_CONFIG_PATH=/path/to/linux-ffmpeg/lib/pkgconfig
+zig build -Dtarget=x86_64-linux-gnu -Doptimize=ReleaseFast -p dist/linux-x86_64
+```
+
+Artifacts land under `dist/linux-x86_64/zig-out/{bin,lib}`; then package them the same way (root wrapper, `bin/flaten-core`, `lib/sherpa-onnx`).
+
 ---
 
 ## Testing

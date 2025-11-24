@@ -9,14 +9,20 @@ libs_src="$project_root/zig-out/lib/sherpa-onnx"
 
 usage() {
   cat <<'EOF'
-Usage: package_release.sh [--output DIR]
-  --output DIR  customize the staging directory (default: dist/flaten-deploy)
+Usage: package_release.sh [--target TRIPLE] [--output DIR]
+  --target TRIPLE  zig target triple, e.g. x86_64-linux-gnu (default: host)
+  --output DIR     custom staging directory (default: dist/flaten-deploy[-TRIPLE])
 EOF
 }
 
 dest_override=""
+target_triple=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --target)
+      shift
+      target_triple="$1"
+      ;;
     --output)
       shift
       dest_override="$1"
@@ -39,6 +45,10 @@ done
   exit 1
 }
 
+if [ -n "$target_triple" ]; then
+  package_root="$project_root/dist/flaten-deploy-$target_triple"
+fi
+
 if [ -n "$dest_override" ]; then
   package_root="$dest_override"
 fi
@@ -48,7 +58,13 @@ cd "$project_root"
 export ZIG_LOCAL_CACHE_DIR="$project_root/.zig-cache"
 export ZIG_GLOBAL_CACHE_DIR="$project_root/.zig-cache/global"
 mkdir -p "$ZIG_LOCAL_CACHE_DIR" "$ZIG_GLOBAL_CACHE_DIR"
-zig build -Doptimize=ReleaseFast
+
+build_args="-Doptimize=ReleaseFast"
+if [ -n "$target_triple" ]; then
+  build_args="$build_args -Dtarget=$target_triple"
+fi
+
+zig build $build_args
 
 [ -f "$binary_path" ] || {
   echo "Release binary not found at $binary_path" >&2
