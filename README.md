@@ -63,13 +63,13 @@ and then place the sherpa-onnx release in `third_party/sherpa-onnx/...` as expec
 
 ## Building and Running
 
-From the project root:
+### Local dev
 
 ```bash
 zig build run -- --input path/to/input.mp4 --output output.srt
 ```
 
-Supported CLI flags (parsed in `src/cli_options.zig`):
+CLI flags (parsed in `src/cli_options.zig`):
 
 - `--input` / `-i` (required): path to the input video/audio file.
 - `--output` / `-o` (optional): path to the output `.srt` file.
@@ -88,7 +88,29 @@ zig build run -- \
   --min-silence-ms 200
 ```
 
-The compiled binary is named `flaten` and is installed into Zig’s usual `zig-out/bin` directory by `zig build install`.
+### Packaged artifacts (dist/flaten-deploy)
+
+`./scripts/package_release.sh` produces a deployable folder:
+
+```
+flaten             # wrapper at package root, checks ffmpeg then runs bin/flaten-core
+bin/flaten-core    # real CLI
+lib/sherpa-onnx/   # bundled sherpa-onnx + onnxruntime libs (rpath ready)
+README.md
+```
+
+Run on the target machine (ffmpeg must be installed):
+
+```bash
+export SHERPA_MODEL_DIR=/path/to/model
+./flaten --input video.mp4 --output subtitles.srt
+```
+
+If you want to skip the ffmpeg check, call the core directly:
+
+```bash
+./bin/flaten-core --input video.mp4 --output subtitles.srt
+```
 
 ---
 
