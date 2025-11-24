@@ -3,6 +3,10 @@ const std = @import("std");
 
 pub const subtitle_writer = @import("subtitle_writer.zig");
 pub const cli_options = @import("cli_options.zig");
+pub const audio_segmenter = @import("audio_segmenter.zig");
+pub const ffmpeg_adapter = @import("ffmpeg_adapter.zig");
+pub const asr_sherpa = @import("asr_sherpa.zig");
+pub const pipeline = @import("pipeline.zig");
 
 pub fn bufferedPrint() !void {
     // Stdout is for the actual output of your application, for example if you
