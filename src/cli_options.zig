@@ -85,7 +85,7 @@ fn defaultOutputPath(allocator: std.mem.Allocator, input_path: []const u8) ![]u8
 
 test "parse minimal args produces default output" {
     const gpa = std.testing.allocator;
-    const opts = try parse(gpa, &.{"--input", "video.mp4"});
+    const opts = try parse(gpa, &.{ "--input", "video.mp4" });
     defer gpa.free(opts.input_path);
     defer gpa.free(opts.output_path);
 
@@ -97,10 +97,10 @@ test "parse minimal args produces default output" {
 test "parse overrides output and sample rate" {
     var gpa = std.testing.allocator;
     const opts = try parse(gpa, &.{
-        "-i", "a.mov",
-        "-o", "out/sub.srt",
-        "--sample-rate", "8000",
-        "--min-speech-ms", "500",
+        "-i",               "a.mov",
+        "-o",               "out/sub.srt",
+        "--sample-rate",    "8000",
+        "--min-speech-ms",  "500",
         "--min-silence-ms", "300",
     });
     defer gpa.free(opts.input_path);

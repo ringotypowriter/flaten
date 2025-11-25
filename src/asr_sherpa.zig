@@ -255,7 +255,7 @@ fn tryParseWavPcm16(raw: []const u8) ?WavPcm16 {
     var data_size: u32 = 0;
 
     while (pos + 8 <= raw.len) {
-        const id = raw[pos..pos + 4];
+        const id = raw[pos .. pos + 4];
         const chunk_size = readLeU32(raw, pos + 4) orelse break;
         const data_start = pos + 8;
 
@@ -439,14 +439,14 @@ test "integration: recognize real wav returns non-empty text" {
     try std.testing.expect(results.len > 0);
 
     std.debug.print("ASR Results:\n", .{});
-        for (results, 0..) |r, i| {
-            const text_slice = r.text[0..];
+    for (results, 0..) |r, i| {
+        const text_slice = r.text[0..];
 
-            std.debug.print(
-                "  [{d}] {d}–{d} ms: {s}\n",
-                .{ i, r.start_ms, r.end_ms, text_slice },
-            );
-        }
+        std.debug.print(
+            "  [{d}] {d}–{d} ms: {s}\n",
+            .{ i, r.start_ms, r.end_ms, text_slice },
+        );
+    }
 
     var non_empty = false;
     for (results) |seg| {

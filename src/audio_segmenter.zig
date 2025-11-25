@@ -13,7 +13,7 @@ pub const VadConfig = struct {
 };
 
 /// VAD 错误类型。目前只可能出现内存不足。
-pub const Error = error{ OutOfMemory };
+pub const Error = error{OutOfMemory};
 
 pub fn detect_speech_segments(
     allocator: std.mem.Allocator,
@@ -106,7 +106,7 @@ test "single voiced region is detected" {
     defer gpa.free(pcm);
 
     // fill: first 1s zeros, next 1s amplitude 2000, final 1s zeros
-    for (pcm[0 .. sample_rate]) |*s| s.* = 0;
+    for (pcm[0..sample_rate]) |*s| s.* = 0;
     for (pcm[sample_rate .. 2 * sample_rate]) |*s| s.* = 2000;
     for (pcm[2 * sample_rate ..]) |*s| s.* = 0;
 
