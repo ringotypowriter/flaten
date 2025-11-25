@@ -59,17 +59,12 @@ On Linux, install `ffmpeg` through your distribution’s package manager (for ex
 
 ---
 
-## Development
+## Development and Contributing
 
 `flaten` is implemented in Zig 0.15.x.  
-For building from source, running tests, and a detailed architecture overview, see [CONTRIBUTING.md](./CONTRIBUTING.md).
-
----
-
-## Contributing
-
 Bug reports, feature requests, and pull requests are welcome.
-Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a PR.
+
+For building from source, running tests, and a detailed architecture overview, please see [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a PR.
 
 ---
 
