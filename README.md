@@ -40,7 +40,7 @@ The project is test‑driven and keeps all heavy dependencies behind clear modul
 
 ## Requirements
 
-- **Zig**: 0.15.x (project is developed and tested with 0.15.2)
+- **Zig**: 0.15.x (project is developed and tested with 0.15.2); required only if you build from source or extend the project.
 - **ffmpeg**: installed on the system and accessible on `PATH`
 - **sherpa-onnx**:
   - C API headers and libraries present under:
@@ -58,6 +58,18 @@ brew install zig ffmpeg
 ```
 
 and then place the sherpa-onnx release in `third_party/sherpa-onnx/...` as expected by `build.zig`.
+
+### Linux ffmpeg installation
+
+On Linux, ffmpeg is usually available via the distribution package manager:
+
+```bash
+sudo apt update && sudo apt install ffmpeg          # Debian / Ubuntu
+sudo dnf install ffmpeg                             # Fedora / RHEL
+sudo pacman -Sy ffmpeg                              # Arch
+```
+
+You can also use `snap install ffmpeg` or a `flatpak` build if those are provided by your distro. Once installed, ensure `ffmpeg` is on `PATH` before running `flaten`.
 
 ---
 
@@ -119,6 +131,17 @@ staging directory will include the target in its name:
 ./scripts/package_release.sh --target x86_64-linux-gnu
 # output: dist/flaten-deploy-x86_64-linux-gnu/...
 ```
+
+### Using release artifacts directly
+
+You can skip building entirely by downloading the `dist/flaten-deploy-*` bundle from GitHub Releases. Each release bundle already includes:
+
+- `flaten` launcher
+- `bin/flaten-core`
+- `lib/sherpa-onnx` dynamic libraries
+- `THIRD_PARTY_LICENSE_sherpa-onnx`
+
+These binaries only require a host `ffmpeg` executable and a sherpa-onnx model directory; no Zig toolchain is needed on the machine where you run `flaten`. Zig is only a build-time dependency for creating or modifying the binaries.
 
 ### Cross-compiling (e.g., macOS → Linux x86_64)
 
@@ -267,9 +290,23 @@ Ideas for future iterations:
 
 ---
 
+## Special thanks
+
+- **sherpa-onnx** – offline ASR engine and C API provided by the k2-fsa team: https://github.com/k2-fsa/sherpa-onnx/
+- **FFmpeg** – battle-tested media toolkit used to decode input audio/video: https://ffmpeg.org/
+
+`flaten` is an independent project and is not affiliated with the sherpa-onnx or FFmpeg maintainers.
+
+---
+
 ## License
 
-This project is licensed under the **Apache License 2.0**.  
+This project is licensed under the **Apache License 2.0**.
 See the `LICENSE` file (or add one if missing) for full terms.
 
-Third‑party components (sherpa-onnx, ffmpeg, onnxruntime, etc.) are subject to their own licenses and terms; make sure you comply with them when redistributing or deploying binaries built from this repository.
+When you redistribute binaries built from this repository, please also respect the licenses of the third‑party components that may be bundled with them:
+
+- **sherpa-onnx** – released by the k2-fsa project under the Apache License 2.0. If you ship `flaten` together with sherpa-onnx libraries or headers, you should include the sherpa-onnx license and any upstream notice files in your distribution and retain their copyright and attribution.
+- **FFmpeg** – developed by the FFmpeg project and licensed under the LGPL or GPL, depending on how it is built. The default `flaten` packages invoke an `ffmpeg` executable that is provided by the host system and do **not** include FFmpeg binaries. If you create a custom bundle that ships FFmpeg alongside `flaten`, you are responsible for complying with FFmpeg’s license for that build (for example by providing the corresponding FFmpeg source code and license text).
+
+Other dependencies such as onnxruntime follow their own upstream licenses. Before redistributing a custom package that includes any additional third‑party libraries, review those licenses and include the required notices with your distribution.
