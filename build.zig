@@ -83,18 +83,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // Discover libraries via pkg-config without hardcoding paths. Users can
-    // override with PKG_CONFIG_PATH (e.g. $HOME/.local/sherpa-onnx/install/lib/pkgconfig).
-    const libs = &[_][]const u8{
-        "avformat",
-        "avcodec",
-        "avutil",
-        "swresample",
-    };
-    for (libs) |name| {
-        exe.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
-    }
-
     exe.linkLibC();
     exe.linkLibCpp();
 
@@ -174,9 +162,6 @@ pub fn build(b: *std.Build) void {
     const mod_tests = b.addTest(.{
         .root_module = mod,
     });
-    for (libs) |name| {
-        mod_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
-    }
     mod_tests.linkLibC();
     mod_tests.linkLibCpp();
     mod_tests.root_module.addIncludePath(b.path(sherpa_include));
@@ -194,9 +179,6 @@ pub fn build(b: *std.Build) void {
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
     });
-    for (libs) |name| {
-        exe_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
-    }
     exe_tests.linkLibC();
     exe_tests.linkLibCpp();
     exe_tests.root_module.addIncludePath(b.path(sherpa_include));
@@ -218,9 +200,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    for (libs) |name| {
-        subtitle_writer_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
-    }
     subtitle_writer_tests.linkLibC();
     subtitle_writer_tests.linkLibCpp();
     subtitle_writer_tests.root_module.addIncludePath(b.path(sherpa_include));
@@ -238,9 +217,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    for (libs) |name| {
-        cli_options_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
-    }
     cli_options_tests.linkLibC();
     cli_options_tests.linkLibCpp();
     cli_options_tests.root_module.addIncludePath(b.path(sherpa_include));
@@ -258,9 +234,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    for (libs) |name| {
-        audio_segmenter_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
-    }
     audio_segmenter_tests.linkLibC();
     audio_segmenter_tests.linkLibCpp();
     audio_segmenter_tests.root_module.addIncludePath(b.path(sherpa_include));
@@ -278,9 +251,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    for (libs) |name| {
-        ffmpeg_adapter_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
-    }
     ffmpeg_adapter_tests.linkLibC();
     ffmpeg_adapter_tests.linkLibCpp();
     ffmpeg_adapter_tests.root_module.addIncludePath(b.path(sherpa_include));
@@ -298,9 +268,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    for (libs) |name| {
-        asr_sherpa_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
-    }
     asr_sherpa_tests.linkLibC();
     asr_sherpa_tests.linkLibCpp();
     asr_sherpa_tests.root_module.addIncludePath(b.path(sherpa_include));
@@ -318,9 +285,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    for (libs) |name| {
-        pipeline_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
-    }
     pipeline_tests.linkLibC();
     pipeline_tests.linkLibCpp();
     pipeline_tests.root_module.addIncludePath(b.path(sherpa_include));
@@ -338,9 +302,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    for (libs) |name| {
-        model_manager_tests.root_module.linkSystemLibrary(name, .{ .use_pkg_config = .yes });
-    }
     model_manager_tests.linkLibC();
     model_manager_tests.linkLibCpp();
     model_manager_tests.root_module.addIncludePath(b.path(sherpa_include));

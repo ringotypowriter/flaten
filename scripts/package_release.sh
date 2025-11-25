@@ -88,28 +88,43 @@ cp "$wrapper_path_src" "$package_root/"
 cp -R "$libs_src" "$package_root/lib/"
 
 cat <<'EOF' >"$package_root/README.md"
-- # flaten 打包说明
+# flaten
 
-- 外层启动器：`flaten`（二进制，位于包根），会先检查 ffmpeg 是否可用，再调用核心二进制。
-- 核心二进制：`bin/flaten-core`。
-- 依赖库：`lib/sherpa-onnx` 下包含 sherpa-onnx 与 onnxruntime 的动态库，rpath 已配置。
-- 模型：不捆绑模型，你可以在目标机上设置 `SHERPA_MODEL_DIR` 指向已有模型目录。
-- 运行要求：目标机需安装 ffmpeg（例如 `brew install ffmpeg`），并保持 `PATH` 可见。
+This directory contains a pre-built distribution of **flaten**, a command-line tool
+for turning video or audio files into subtitle files using offline speech recognition.
 
-## 运行
+## What flaten does
+
+- Decodes input media with `ffmpeg` into mono 16 kHz PCM audio.
+- Segments long audio into manageable chunks.
+- Runs speech recognition via sherpa-onnx / onnxruntime.
+- Writes human-readable subtitle files (e.g. SRT).
+
+## Layout
+
+- `flaten` – launcher binary at the package root; checks that `ffmpeg` is available,
+  then dispatches to the core binary.
+- `bin/flaten-core` – core CLI that performs the transcription pipeline.
+- `lib/sherpa-onnx` – bundled dynamic libraries for sherpa-onnx and onnxruntime.
+
+## Requirements
+
+- `ffmpeg` must be installed on the target machine and visible on `PATH`.
+- Network access is required if you want flaten to auto-download models on first run, otherwise you must provide models manually.
+
+## Models
+
+- On startup, flaten first checks `SHERPA_MODEL_DIR`; if set, that directory is used as the model root.
+- If `SHERPA_MODEL_DIR` is not set, flaten will download a default small zh/en sherpa-onnx model into a local directory (relative to the current working directory) when internet access is available.
+- For offline environments, you can pre-populate the model directory and/or point `SHERPA_MODEL_DIR` to an existing sherpa-onnx model.
+
+## Quick start
 
 ```sh
 export SHERPA_MODEL_DIR=/path/to/your/model
-# 推荐：带检查的入口（二进制，包根）
 ./flaten --input some-video.mp4 --output subtitles.srt
-
-# 或直接调用核心二进制（不检查 ffmpeg）
-./bin/flaten-core --input some-video.mp4 --output subtitles.srt
 ```
 
-## 说明
-- `zig-out/bin/flaten` 已在发布期间构建为 ReleaseFast。
-- `lib/sherpa-onnx` 目录是通过 Zig 的 install 步骤整理出来的，保证了动态库与二进制在一个包内部。
 EOF
 
-echo "打包完成：$package_root"
+echo "Package written to: $package_root"
