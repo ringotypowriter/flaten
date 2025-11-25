@@ -1,6 +1,6 @@
 # flaten
 
-`flaten` is a small CLI tool written in Zig that turns a video or audio file into a speech-only `.srt` subtitle track.
+`flaten` is a small, lightweight CLI tool written in Zig that turns a video or audio file into a speech-only `.srt` subtitle track and is designed to run well on low-resource machines.
 Non-speech regions are skipped during recognition, but subtitle timestamps stay aligned to the original media timeline.
 
 ---
@@ -10,6 +10,7 @@ Non-speech regions are skipped during recognition, but subtitle timestamps stay 
 - Speech-only subtitle generation using `ffmpeg` + sherpa-onnx.
 - Simple VAD tuned for conversational speech, configurable via CLI flags.
 - Timeline-preserving SRT output (silence is kept in the timestamps).
+- Optimized for low-resource, offline environments (CPU-only; no GPU required).
 - Cross-platform builds via Zig; packaged bundles include sherpa-onnx libs.
 
 ---
