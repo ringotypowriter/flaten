@@ -294,6 +294,23 @@ pub fn build(b: *std.Build) void {
     pipeline_tests.root_module.linkSystemLibrary("onnxruntime", .{});
     const run_pipeline_tests = b.addRunArtifact(pipeline_tests);
 
+    const pipeline_progress_tests = b.addTest(.{
+        .name = "pipeline_progress-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pipeline_progress.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    pipeline_progress_tests.linkLibC();
+    pipeline_progress_tests.linkLibCpp();
+    pipeline_progress_tests.root_module.addIncludePath(b.path(sherpa_include));
+    pipeline_progress_tests.root_module.addLibraryPath(b.path(sherpa_lib));
+    pipeline_progress_tests.root_module.addRPath(b.path(sherpa_lib));
+    pipeline_progress_tests.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    pipeline_progress_tests.root_module.linkSystemLibrary("onnxruntime", .{});
+    const run_pipeline_progress_tests = b.addRunArtifact(pipeline_progress_tests);
+
     const model_manager_tests = b.addTest(.{
         .name = "model_manager-tests",
         .root_module = b.createModule(.{
@@ -311,6 +328,29 @@ pub fn build(b: *std.Build) void {
     model_manager_tests.root_module.linkSystemLibrary("onnxruntime", .{});
     const run_model_manager_tests = b.addRunArtifact(model_manager_tests);
 
+    // Demo executable that runs the pipeline on a small test video
+    // and shows the full std.Progress-based progress bar. This is
+    // intended as a manual integration test for the CLI progress UX.
+    const progress_demo = b.addExecutable(.{
+        .name = "progress-demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/progress_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "flaten", .module = mod },
+            },
+        }),
+    });
+    progress_demo.linkLibC();
+    progress_demo.linkLibCpp();
+    progress_demo.root_module.addIncludePath(b.path(sherpa_include));
+    progress_demo.root_module.addLibraryPath(b.path(sherpa_lib));
+    progress_demo.root_module.addRPath(b.path(sherpa_lib));
+    progress_demo.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
+    progress_demo.root_module.linkSystemLibrary("onnxruntime", .{});
+    const run_progress_demo = b.addRunArtifact(progress_demo);
+
     // A top level step for running all tests. dependOn can be called multiple
     // times and since these run steps do not depend on one another, this will
     // make all of them run in parallel.
@@ -323,7 +363,11 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_ffmpeg_adapter_tests.step);
     test_step.dependOn(&run_asr_sherpa_tests.step);
     test_step.dependOn(&run_pipeline_tests.step);
+    test_step.dependOn(&run_pipeline_progress_tests.step);
     test_step.dependOn(&run_model_manager_tests.step);
+
+    const progress_demo_step = b.step("progress-demo", "Run pipeline progress demo");
+    progress_demo_step.dependOn(&run_progress_demo.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //

@@ -3,6 +3,7 @@ const subtitle_writer = @import("subtitle_writer.zig");
 const audio_segmenter = @import("audio_segmenter.zig");
 const asr_sherpa = @import("asr_sherpa.zig");
 const ffmpeg_adapter = @import("ffmpeg_adapter.zig");
+const pipeline_progress = @import("pipeline_progress.zig");
 
 // Pipeline 级别的字幕边界 padding（毫秒），在构建 SRT 时使用。
 const pre_pad_ms: u32 = 150;
@@ -66,10 +67,31 @@ pub fn buildSrtFromSegments(
 }
 
 /// Placeholder pipeline that should wire ffmpeg -> VAD -> ASR -> SRT.
+/// This variant does not expose progress tracking.
 pub fn transcribe_video_to_srt(
     allocator: std.mem.Allocator,
     input_path: []const u8,
     cfg: PipelineConfig,
+) Error![]u8 {
+    return transcribe_video_to_srt_with_progress(allocator, input_path, cfg, null);
+}
+
+/// Pipeline variant that accepts an optional PipelineProgress for CLI
+/// progress reporting.
+pub fn transcribe_video_to_srt_with_progress(
+    allocator: std.mem.Allocator,
+    input_path: []const u8,
+    cfg: PipelineConfig,
+    progress: ?*pipeline_progress.PipelineProgress,
+) Error![]u8 {
+    return transcribe_video_to_srt_impl(allocator, input_path, cfg, progress);
+}
+
+fn transcribe_video_to_srt_impl(
+    allocator: std.mem.Allocator,
+    input_path: []const u8,
+    cfg: PipelineConfig,
+    progress: ?*pipeline_progress.PipelineProgress,
 ) Error![]u8 {
     // 当前 ASR 配置固定为 16k 采样率，避免采样率不一致。
     if (cfg.sample_rate != 16_000) {
@@ -77,8 +99,11 @@ pub fn transcribe_video_to_srt(
     }
 
     // 1. 调用 ffmpeg 将输入文件解码为单声道 s16le PCM。
-    const pcm = try decodePcmFromFfmpeg(allocator, input_path, cfg.sample_rate);
+    const pcm = try decodePcmFromFfmpeg(allocator, input_path, cfg.sample_rate, progress);
     defer allocator.free(pcm);
+    if (progress) |p| {
+        p.onFfmpegDone();
+    }
 
     // 2. 使用 VAD 在原始时间线上检测语音段。
     const vad_cfg = audio_segmenter.VadConfig{
@@ -95,6 +120,15 @@ pub fn transcribe_video_to_srt(
     );
     defer allocator.free(segments);
 
+    if (progress) |p| {
+        p.setVadTotalSegments(segments.len);
+        var i: usize = 0;
+        while (i < segments.len) : (i += 1) {
+            p.onVadSegmentDone();
+        }
+        p.onVadDone();
+    }
+
     if (segments.len == 0) {
         // 没有检测到语音段，返回空 SRT。
         return allocator.dupe(u8, "");
@@ -103,6 +137,10 @@ pub fn transcribe_video_to_srt(
     // 3. 对每个语音段单独调用 ASR，结果仍是“局部时间”。
     var results_per_segment = std.array_list.Managed([]asr_sherpa.SegmentResult).init(allocator);
     errdefer cleanupAsrResults(&results_per_segment);
+
+    if (progress) |p| {
+        p.setAsrTotalSegments(segments.len);
+    }
 
     for (segments) |seg| {
         const start_idx: usize = @intCast((seg.start_ms * cfg.sample_rate) / 1000);
@@ -122,6 +160,13 @@ pub fn transcribe_video_to_srt(
             return Error.AsrFailed;
         };
         try results_per_segment.append(seg_results);
+        if (progress) |p| {
+            p.onAsrSegmentDone();
+        }
+    }
+
+    if (progress) |p| {
+        p.onAsrDone();
     }
 
     // 4. 在构建 SRT 前，对时间线做轻量 padding，让字幕稍微提前出现、延后消失。
@@ -129,6 +174,13 @@ pub fn transcribe_video_to_srt(
     defer allocator.free(padded_segments);
 
     // 5. 将局部时间映射回原始时间线，生成最终 SRT。
+    if (progress) |p| {
+        // Treat SRT building as a single unit of work for now.
+        p.setSrtTotalItems(1);
+        p.onSrtItemDone();
+        p.onSrtDone();
+    }
+
     const srt = try buildSrtFromSegments(allocator, padded_segments, results_per_segment.items);
     cleanupAsrResults(&results_per_segment);
     return srt;
@@ -203,6 +255,35 @@ test "transcribe_video_to_srt runs on example mp4 (stub ASR)" {
     }
 }
 
+test "transcribe_video_to_srt_with_progress runs and updates progress" {
+    const gpa = std.testing.allocator;
+
+    const cfg = PipelineConfig{
+        .sample_rate = 16_000,
+        .min_speech_ms = 300,
+        .min_silence_ms = 200,
+    };
+
+    var progress = pipeline_progress.PipelineProgress.initNoOp();
+    defer progress.deinit();
+
+    const srt = try transcribe_video_to_srt_with_progress(
+        gpa,
+        "test_resources/test.mp4",
+        cfg,
+        &progress,
+    );
+    defer gpa.free(srt);
+
+    // 允许空结果（例如音频近似静音），但若非空则检查 SRT 结构基本合理。
+    if (srt.len > 0) {
+        try std.testing.expect(std.mem.containsAtLeast(u8, srt, 1, " --> "));
+    }
+
+    // Basic sanity: counters should be internally consistent.
+    try std.testing.expect(progress.ffmpeg_completed_samples <= progress.ffmpeg_total_samples);
+}
+
 fn padSegmentsForSrt(
     allocator: std.mem.Allocator,
     segments: []const audio_segmenter.SpeechSegment,
@@ -247,6 +328,7 @@ fn decodePcmFromFfmpeg(
     allocator: std.mem.Allocator,
     input_path: []const u8,
     sample_rate: u32,
+    progress: ?*pipeline_progress.PipelineProgress,
 ) Error![]i16 {
     const argv = ffmpeg_adapter.build_ffmpeg_cmd(
         .{ .input_path = input_path, .sample_rate = sample_rate, .mono = true },
@@ -266,10 +348,17 @@ fn decodePcmFromFfmpeg(
     errdefer byte_list.deinit();
 
     var read_buf: [4096]u8 = undefined;
+    var total_samples_read: usize = 0;
     while (true) {
         const n = stdout_file.read(&read_buf) catch return Error.IoFailed;
         if (n == 0) break;
         byte_list.appendSlice(read_buf[0..n]) catch return Error.OutOfMemory;
+        if (progress) |p| {
+            // 2 bytes per sample for s16le.
+            const delta_samples: usize = n / 2;
+            total_samples_read += delta_samples;
+            p.addFfmpegDecodedSamples(delta_samples);
+        }
     }
 
     const term = child.wait() catch return Error.FfmpegFailed;
@@ -288,6 +377,11 @@ fn decodePcmFromFfmpeg(
     }
 
     const sample_count: usize = even_bytes / 2;
+    if (progress) |p| {
+        if (p.ffmpeg_total_samples == 0) {
+            p.setFfmpegTotalSamples(sample_count);
+        }
+    }
     var samples = allocator.alloc(i16, sample_count) catch return Error.OutOfMemory;
 
     var i: usize = 0;

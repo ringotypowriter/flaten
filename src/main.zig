@@ -35,7 +35,15 @@ pub fn main() !void {
         .min_silence_ms = opts.min_silence_ms,
     };
 
-    const srt = flaten.pipeline.transcribe_video_to_srt(allocator, opts.input_path, cfg) catch |err| {
+    var progress = flaten.pipeline_progress.PipelineProgress.init(true);
+    defer progress.deinit();
+
+    const srt = flaten.pipeline.transcribe_video_to_srt_with_progress(
+        allocator,
+        opts.input_path,
+        cfg,
+        &progress,
+    ) catch |err| {
         std.debug.print("Pipeline error: {s}\n", .{@errorName(err)});
         return err;
     };

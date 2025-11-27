@@ -8,6 +8,7 @@ pub const ffmpeg_adapter = @import("ffmpeg_adapter.zig");
 pub const asr_sherpa = @import("asr_sherpa.zig");
 pub const pipeline = @import("pipeline.zig");
 pub const model_manager = @import("model_manager.zig");
+pub const pipeline_progress = @import("pipeline_progress.zig");
 
 pub fn bufferedPrint() !void {
     // Stdout is for the actual output of your application, for example if you
