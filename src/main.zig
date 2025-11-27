@@ -52,6 +52,20 @@ pub fn main() !void {
     var file = try std.fs.cwd().createFile(opts.output_path, .{ .truncate = true });
     defer file.close();
     try file.writeAll(srt);
+
+    const full_output_path = std.fs.cwd().realpathAlloc(allocator, opts.output_path) catch |err| blk: {
+        // Fall back to the original path if resolving an absolute path fails.
+        std.debug.print("Warning: failed to resolve absolute output path: {s}\n", .{@errorName(err)});
+        const dup = allocator.dupe(u8, opts.output_path) catch {
+            // If even this fails, just print the original path slice and return.
+            progress.printSummary(opts.output_path);
+            return;
+        };
+        break :blk dup;
+    };
+    defer allocator.free(full_output_path);
+
+    progress.printSummary(full_output_path);
 }
 
 test "simple test" {

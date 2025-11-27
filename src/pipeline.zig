@@ -93,6 +93,10 @@ fn transcribe_video_to_srt_impl(
     cfg: PipelineConfig,
     progress: ?*pipeline_progress.PipelineProgress,
 ) Error![]u8 {
+    if (progress) |p| {
+        p.markStart();
+    }
+
     // 当前 ASR 配置固定为 16k 采样率，避免采样率不一致。
     if (cfg.sample_rate != 16_000) {
         return Error.UnsupportedSampleRate;
@@ -182,6 +186,9 @@ fn transcribe_video_to_srt_impl(
     }
 
     const srt = try buildSrtFromSegments(allocator, padded_segments, results_per_segment.items);
+    if (progress) |p| {
+        p.markEnd();
+    }
     cleanupAsrResults(&results_per_segment);
     return srt;
 }
@@ -282,6 +289,11 @@ test "transcribe_video_to_srt_with_progress runs and updates progress" {
 
     // Basic sanity: counters should be internally consistent.
     try std.testing.expect(progress.ffmpeg_completed_samples <= progress.ffmpeg_total_samples);
+
+    // Pipeline should have marked start and end timestamps.
+    try std.testing.expect(progress.start_time_ns != 0);
+    try std.testing.expect(progress.end_time_ns != 0);
+    try std.testing.expect(progress.end_time_ns >= progress.start_time_ns);
 }
 
 fn padSegmentsForSrt(
