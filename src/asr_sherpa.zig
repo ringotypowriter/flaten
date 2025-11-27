@@ -44,22 +44,35 @@ pub const Config = struct {
     feature_dim: u32 = 80,
 };
 
-/// 主入口：给定 16-bit PCM（单声道，s16le）数据返回分段识别结果。
-/// - 测试场景：直接走 stub，避免网络/模型依赖，保证 TDD 流畅。
-/// - 正常运行：优先使用 SHERPA_MODEL_DIR；否则自动下载预训练模型到程序运行时的当前目录。
 pub fn recognize(allocator: std.mem.Allocator, wav_data: []const u8) ![]SegmentResult {
-    // 在 zig test 模式下直接使用假实现，避免测试阶段去下载大模型。
     if (builtin.is_test) return fallbackStub(allocator);
 
     const result = try recognizeWithRealModel(allocator, wav_data);
     return result;
 }
 
-/// 集成测试/真实运行用入口：
-/// - 始终尝试使用真实模型（必要时会触发网络下载）；
-/// - 出错时返回具体错误，不回退到 stub。
-/// 生产环境和集成测试推荐直接使用该函数。
+pub fn recognizeWithThreads(
+    allocator: std.mem.Allocator,
+    wav_data: []const u8,
+    num_threads: i32,
+) ![]SegmentResult {
+    if (builtin.is_test) return fallbackStub(allocator);
+
+    const effective_threads: i32 = if (num_threads <= 0) 2 else num_threads;
+    const result = try recognizeWithRealModelAndConfig(allocator, wav_data, effective_threads);
+    return result;
+}
+
 pub fn recognizeWithRealModel(allocator: std.mem.Allocator, wav_data: []const u8) ![]SegmentResult {
+    const result = try recognizeWithRealModelAndConfig(allocator, wav_data, 2);
+    return result;
+}
+
+fn recognizeWithRealModelAndConfig(
+    allocator: std.mem.Allocator,
+    wav_data: []const u8,
+    num_threads: i32,
+) ![]SegmentResult {
     var model_dir_owned: ?[]u8 = null;
     defer if (model_dir_owned) |buf| allocator.free(buf);
 
@@ -73,7 +86,10 @@ pub fn recognizeWithRealModel(allocator: std.mem.Allocator, wav_data: []const u8
     };
     model_dir_owned = try model_manager.ensureModelDir(allocator, mm_cfg);
 
-    const cfg = Config{ .model_dir = model_dir_owned.? };
+    const cfg = Config{
+        .model_dir = model_dir_owned.?,
+        .num_threads = num_threads,
+    };
 
     return try recognizeWithModel(allocator, wav_data, cfg);
 }

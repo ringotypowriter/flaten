@@ -3,7 +3,7 @@ const flaten = @import("flaten");
 
 fn printUsage() !void {
     std.debug.print(
-        "Usage: flaten --input <input> [--output <output>] [--sample-rate <hz>] [--min-speech-ms <ms>] [--min-silence-ms <ms>]\n",
+        "Usage: flaten --input <input> [--output <output>] [--sample-rate <hz>] [--min-speech-ms <ms>] [--min-silence-ms <ms>] [--asr-num-threads <n>]\n",
         .{},
     );
 }
@@ -33,6 +33,7 @@ pub fn main() !void {
         .sample_rate = opts.sample_rate,
         .min_speech_ms = opts.min_speech_ms,
         .min_silence_ms = opts.min_silence_ms,
+        .asr_num_threads = opts.asr_num_threads,
     };
 
     var progress = flaten.pipeline_progress.PipelineProgress.init(true);

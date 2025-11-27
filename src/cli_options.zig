@@ -6,6 +6,7 @@ pub const CliOptions = struct {
     sample_rate: u32 = 16_000,
     min_speech_ms: u32 = 300,
     min_silence_ms: u32 = 200,
+    asr_num_threads: i32 = 2,
 };
 
 pub const ParseError = error{
@@ -22,6 +23,7 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !CliOptions
     var sample_rate: u32 = 16_000;
     var min_speech_ms: u32 = 300;
     var min_silence_ms: u32 = 200;
+    var asr_num_threads: i32 = 2;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -46,6 +48,10 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !CliOptions
             i += 1;
             if (i >= args.len) return ParseError.MissingValue;
             min_silence_ms = try parseUnsigned(args[i]);
+        } else if (std.mem.eql(u8, arg, "--asr-num-threads")) {
+            i += 1;
+            if (i >= args.len) return ParseError.MissingValue;
+            asr_num_threads = try parseSigned(args[i]);
         } else {
             return ParseError.UnknownFlag;
         }
@@ -65,11 +71,16 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !CliOptions
         .sample_rate = sample_rate,
         .min_speech_ms = min_speech_ms,
         .min_silence_ms = min_silence_ms,
+        .asr_num_threads = asr_num_threads,
     };
 }
 
 fn parseUnsigned(text: []const u8) !u32 {
     return std.fmt.parseInt(u32, text, 10) catch ParseError.MissingValue;
+}
+
+fn parseSigned(text: []const u8) !i32 {
+    return std.fmt.parseInt(i32, text, 10) catch ParseError.MissingValue;
 }
 
 fn defaultOutputPath(allocator: std.mem.Allocator, input_path: []const u8) ![]u8 {
@@ -97,11 +108,12 @@ test "parse minimal args produces default output" {
 test "parse overrides output and sample rate" {
     var gpa = std.testing.allocator;
     const opts = try parse(gpa, &.{
-        "-i",               "a.mov",
-        "-o",               "out/sub.srt",
-        "--sample-rate",    "8000",
-        "--min-speech-ms",  "500",
-        "--min-silence-ms", "300",
+        "-i",                 "a.mov",
+        "-o",                 "out/sub.srt",
+        "--sample-rate",      "8000",
+        "--min-speech-ms",    "500",
+        "--min-silence-ms",   "300",
+        "--asr-num-threads",  "4",
     });
     defer gpa.free(opts.input_path);
     defer gpa.free(opts.output_path);
@@ -111,6 +123,7 @@ test "parse overrides output and sample rate" {
     try std.testing.expectEqual(@as(u32, 8000), opts.sample_rate);
     try std.testing.expectEqual(@as(u32, 500), opts.min_speech_ms);
     try std.testing.expectEqual(@as(u32, 300), opts.min_silence_ms);
+    try std.testing.expectEqual(@as(i32, 4), opts.asr_num_threads);
 }
 
 test "missing input errors" {

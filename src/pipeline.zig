@@ -13,6 +13,8 @@ pub const PipelineConfig = struct {
     sample_rate: u32 = 16_000,
     min_speech_ms: u32 = 300,
     min_silence_ms: u32 = 200,
+    /// ASR 推理线程数，透传给 sherpa-onnx/ONNX Runtime。
+    asr_num_threads: i32 = 2,
 };
 
 pub const Error = error{
@@ -160,7 +162,11 @@ fn transcribe_video_to_srt_impl(
         const bytes = try encodePcm16ToBytes(allocator, window);
         defer allocator.free(bytes);
 
-        const seg_results = asr_sherpa.recognize(allocator, bytes) catch {
+        const seg_results = asr_sherpa.recognizeWithThreads(
+            allocator,
+            bytes,
+            cfg.asr_num_threads,
+        ) catch {
             return Error.AsrFailed;
         };
         try results_per_segment.append(seg_results);
