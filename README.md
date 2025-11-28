@@ -10,6 +10,7 @@ Non-speech regions are skipped during recognition, but subtitle timestamps stay 
 - Speech-only subtitle generation using `ffmpeg` + sherpa-onnx.
 - Simple VAD tuned for conversational speech, configurable via CLI flags.
 - Timeline-preserving SRT output (silence is kept in the timestamps).
+- Optional plain-text transcript output via `--format txt` (one snippet per line; `--txt` is kept as a shorthand alias).
 - Optimized for low-resource, offline environments (CPU-only; no GPU required).
 - Cross-platform builds via Zig; packaged bundles include sherpa-onnx libs.
 

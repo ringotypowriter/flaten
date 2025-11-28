@@ -9,12 +9,21 @@ const pipeline_progress = @import("pipeline_progress.zig");
 const pre_pad_ms: u32 = 150;
 const post_pad_ms: u32 = 150;
 
+pub const OutputFormat = enum {
+    /// 默认行为：输出带时间轴的 SRT 字幕。
+    srt,
+    /// 纯文本模式：每个识别结果一行，不带时间轴。
+    txt,
+};
+
 pub const PipelineConfig = struct {
     sample_rate: u32 = 16_000,
     min_speech_ms: u32 = 300,
     min_silence_ms: u32 = 200,
     /// ASR 推理线程数，透传给 sherpa-onnx/ONNX Runtime。
     asr_num_threads: i32 = 2,
+    /// 输出格式：SRT（默认）或纯文本 txt。
+    output_format: OutputFormat = .srt,
 };
 
 pub const Error = error{
@@ -66,6 +75,35 @@ pub fn buildSrtFromSegments(
     const srt = try subtitle_writer.formatSrt(allocator, items.items);
     items.deinit();
     return srt;
+}
+
+/// 将分段 ASR 结果按顺序拼接成纯文本，每个 SegmentResult 一行。
+/// 不包含时间轴，仅按识别顺序用 '\n' 分割。
+pub fn buildTxtFromSegmentResults(
+    allocator: std.mem.Allocator,
+    results_per_segment: []const []const asr_sherpa.SegmentResult,
+) ![]u8 {
+    var buf = std.array_list.Managed(u8).init(allocator);
+    errdefer buf.deinit();
+
+    var writer = buf.writer();
+    var first_line = true;
+
+    for (results_per_segment) |seg_results| {
+        for (seg_results) |res| {
+            // 跳过空文本，避免输出空行。
+            if (res.text.len == 0) continue;
+
+            if (!first_line) {
+                try writer.writeByte('\n');
+            } else {
+                first_line = false;
+            }
+            try writer.writeAll(res.text);
+        }
+    }
+
+    return buf.toOwnedSlice();
 }
 
 /// Placeholder pipeline that should wire ffmpeg -> VAD -> ASR -> SRT.
@@ -180,23 +218,47 @@ fn transcribe_video_to_srt_impl(
     }
 
     // 4. 在构建 SRT 前，对时间线做轻量 padding，让字幕稍微提前出现、延后消失。
-    const padded_segments = try padSegmentsForSrt(allocator, segments);
-    defer allocator.free(padded_segments);
+    // 或直接按段落文本构建纯文本输出。
+    var output: []u8 = undefined;
+    switch (cfg.output_format) {
+        .srt => {
+            const padded_segments = try padSegmentsForSrt(allocator, segments);
+            defer allocator.free(padded_segments);
 
-    // 5. 将局部时间映射回原始时间线，生成最终 SRT。
-    if (progress) |p| {
-        // Treat SRT building as a single unit of work for now.
-        p.setSrtTotalItems(1);
-        p.onSrtItemDone();
-        p.onSrtDone();
+            // 将局部时间映射回原始时间线，生成最终 SRT。
+            if (progress) |p| {
+                // Treat SRT building as a single unit of work for now.
+                p.setSrtTotalItems(1);
+                p.onSrtItemDone();
+                p.onSrtDone();
+            }
+
+            output = try buildSrtFromSegments(
+                allocator,
+                padded_segments,
+                results_per_segment.items,
+            );
+        },
+        .txt => {
+            if (progress) |p| {
+                // 对于 txt 输出，同样视为单个步骤，便于整体进度观测。
+                p.setSrtTotalItems(1);
+                p.onSrtItemDone();
+                p.onSrtDone();
+            }
+
+            output = try buildTxtFromSegmentResults(
+                allocator,
+                results_per_segment.items,
+            );
+        },
     }
 
-    const srt = try buildSrtFromSegments(allocator, padded_segments, results_per_segment.items);
     if (progress) |p| {
         p.markEnd();
     }
     cleanupAsrResults(&results_per_segment);
-    return srt;
+    return output;
 }
 
 test "buildSrtFromSegments maps local time to global timeline" {
@@ -218,6 +280,26 @@ test "buildSrtFromSegments maps local time to global timeline" {
 
     try std.testing.expect(std.mem.containsAtLeast(u8, srt, 1, "HELLO"));
     try std.testing.expect(std.mem.containsAtLeast(u8, srt, 1, "00:00:00,000"));
+}
+
+test "buildTxtFromSegmentResults flattens results into newline-separated text" {
+    const gpa = std.testing.allocator;
+
+    const seg0 = [_]asr_sherpa.SegmentResult{
+        .{ .start_ms = 0, .end_ms = 500, .text = "HELLO" },
+        .{ .start_ms = 500, .end_ms = 900, .text = "" }, // empty should be skipped
+    };
+    const seg1 = [_]asr_sherpa.SegmentResult{
+        .{ .start_ms = 1000, .end_ms = 1500, .text = "WORLD" },
+    };
+
+    const txt = try buildTxtFromSegmentResults(
+        gpa,
+        &.{ seg0[0..], seg1[0..] },
+    );
+    defer gpa.free(txt);
+
+    try std.testing.expectEqualStrings("HELLO\nWORLD", txt);
 }
 
 test "buildSrtFromSegments preserves gaps between speech segments" {
