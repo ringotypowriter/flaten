@@ -11,6 +11,8 @@ pub const CliOptions = struct {
     output_path: []const u8,
     /// 输出格式，默认 SRT；可通过 --format 或 --txt 切换。
     format: OutputFormat = .srt,
+    /// 仅在 txt 格式下生效的片段分隔符；默认为换行符 "\n"。
+    txt_separator: []const u8,
     sample_rate: u32 = 16_000,
     min_speech_ms: u32 = 300,
     min_silence_ms: u32 = 200,
@@ -29,6 +31,7 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !CliOptions
     var input_path: ?[]const u8 = null;
     var output_path: ?[]const u8 = null;
     var format: OutputFormat = .srt;
+    var txt_separator: ?[]const u8 = null;
     var sample_rate: u32 = 16_000;
     var min_speech_ms: u32 = 300;
     var min_silence_ms: u32 = 200;
@@ -49,6 +52,10 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !CliOptions
             i += 1;
             if (i >= args.len) return ParseError.MissingValue;
             format = try parseFormat(args[i]);
+        } else if (std.mem.eql(u8, arg, "--separator")) {
+            i += 1;
+            if (i >= args.len) return ParseError.MissingValue;
+            txt_separator = try allocator.dupe(u8, args[i]);
         } else if (std.mem.eql(u8, arg, "--txt")) {
             // 兼容老参数：等价于 --format txt
             format = .txt;
@@ -75,6 +82,11 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !CliOptions
 
     if (input_path == null) return ParseError.MissingInput;
 
+    const final_separator = if (txt_separator) |sep|
+        sep
+    else
+        try allocator.dupe(u8, "\n");
+
     const final_input = input_path.?;
     const final_output = if (output_path) |out|
         out
@@ -85,6 +97,7 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !CliOptions
         .input_path = final_input,
         .output_path = final_output,
         .format = format,
+        .txt_separator = final_separator,
         .sample_rate = sample_rate,
         .min_speech_ms = min_speech_ms,
         .min_silence_ms = min_silence_ms,
@@ -130,10 +143,12 @@ test "parse minimal args produces default output" {
     const opts = try parse(gpa, &.{ "--input", "video.mp4" });
     defer gpa.free(opts.input_path);
     defer gpa.free(opts.output_path);
+    defer gpa.free(opts.txt_separator);
 
     try std.testing.expectEqualStrings("video.mp4", opts.input_path);
     try std.testing.expectEqualStrings("video.srt", opts.output_path);
     try std.testing.expect(opts.format == .srt);
+    try std.testing.expectEqualStrings("\n", opts.txt_separator);
     try std.testing.expect(opts.sample_rate == 16_000);
 }
 
@@ -143,6 +158,7 @@ test "parse overrides output and sample rate" {
         "-i",                 "a.mov",
         "-o",                 "out/sub.srt",
         "--format",           "txt",
+        "--separator",        " || ",
         "--sample-rate",      "8000",
         "--min-speech-ms",    "500",
         "--min-silence-ms",   "300",
@@ -150,6 +166,7 @@ test "parse overrides output and sample rate" {
     });
     defer gpa.free(opts.input_path);
     defer gpa.free(opts.output_path);
+    defer gpa.free(opts.txt_separator);
 
     try std.testing.expectEqualStrings("a.mov", opts.input_path);
     try std.testing.expectEqualStrings("out/sub.srt", opts.output_path);
@@ -158,6 +175,7 @@ test "parse overrides output and sample rate" {
     try std.testing.expectEqual(@as(u32, 500), opts.min_speech_ms);
     try std.testing.expectEqual(@as(u32, 300), opts.min_silence_ms);
     try std.testing.expectEqual(@as(i32, 4), opts.asr_num_threads);
+    try std.testing.expectEqualStrings(" || ", opts.txt_separator);
 }
 
 test "parse txt flag switches default extension to .txt" {
@@ -165,6 +183,7 @@ test "parse txt flag switches default extension to .txt" {
     const opts = try parse(gpa, &.{ "--input", "clip.mov", "--txt" });
     defer gpa.free(opts.input_path);
     defer gpa.free(opts.output_path);
+    defer gpa.free(opts.txt_separator);
 
     try std.testing.expectEqualStrings("clip.mov", opts.input_path);
     try std.testing.expectEqualStrings("clip.txt", opts.output_path);

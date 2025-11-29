@@ -24,6 +24,8 @@ pub const PipelineConfig = struct {
     asr_num_threads: i32 = 2,
     /// 输出格式：SRT（默认）或纯文本 txt。
     output_format: OutputFormat = .srt,
+    /// txt 输出模式下使用的片段分隔符，默认为 "\n"。
+    txt_separator: []const u8 = "\n",
 };
 
 pub const Error = error{
@@ -78,26 +80,27 @@ pub fn buildSrtFromSegments(
 }
 
 /// 将分段 ASR 结果按顺序拼接成纯文本，每个 SegmentResult 一行。
-/// 不包含时间轴，仅按识别顺序用 '\n' 分割。
+/// 不包含时间轴，仅按识别顺序用 `separator` 分割。
 pub fn buildTxtFromSegmentResults(
     allocator: std.mem.Allocator,
     results_per_segment: []const []const asr_sherpa.SegmentResult,
+    separator: []const u8,
 ) ![]u8 {
     var buf = std.array_list.Managed(u8).init(allocator);
     errdefer buf.deinit();
 
     var writer = buf.writer();
-    var first_line = true;
+    var first = true;
 
     for (results_per_segment) |seg_results| {
         for (seg_results) |res| {
             // 跳过空文本，避免输出空行。
             if (res.text.len == 0) continue;
 
-            if (!first_line) {
-                try writer.writeByte('\n');
+            if (!first) {
+                try writer.writeAll(separator);
             } else {
-                first_line = false;
+                first = false;
             }
             try writer.writeAll(res.text);
         }
@@ -250,6 +253,7 @@ fn transcribe_video_to_srt_impl(
             output = try buildTxtFromSegmentResults(
                 allocator,
                 results_per_segment.items,
+                cfg.txt_separator,
             );
         },
     }
@@ -296,6 +300,7 @@ test "buildTxtFromSegmentResults flattens results into newline-separated text" {
     const txt = try buildTxtFromSegmentResults(
         gpa,
         &.{ seg0[0..], seg1[0..] },
+        "\n",
     );
     defer gpa.free(txt);
 

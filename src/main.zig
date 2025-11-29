@@ -28,6 +28,7 @@ pub fn main() !void {
     };
     defer allocator.free(opts.input_path);
     defer allocator.free(opts.output_path);
+    defer allocator.free(opts.txt_separator);
 
     const cfg = flaten.pipeline.PipelineConfig{
         .sample_rate = opts.sample_rate,
@@ -38,6 +39,7 @@ pub fn main() !void {
             .srt => .srt,
             .txt => .txt,
         },
+        .txt_separator = opts.txt_separator,
     };
 
     var progress = flaten.pipeline_progress.PipelineProgress.init(true);
