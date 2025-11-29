@@ -13,12 +13,38 @@ export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-"$project_root/.zig-cache"}"
 export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-"$project_root/.zig-cache/global"}"
 mkdir -p "$ZIG_LOCAL_CACHE_DIR" "$ZIG_GLOBAL_CACHE_DIR"
 
+supported_target_hints="x86_64-linux-gnu aarch64-linux-gnu x86_64-linux aarch64-linux arm64-linux x86-linux"
+
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 Usage: package_release.sh [--target TRIPLE] [--output DIR]
   --target TRIPLE  zig target triple, e.g. x86_64-linux-gnu (default: auto-detected host)
+                   Supported hints: $supported_target_hints. Run 'zig targets' (or pipe to
+                   'rg -F <arch>') to explore the full set of valid triples.
   --output DIR     custom staging directory (default: dist/flaten-deploy-<TARGET>)
 EOF
+}
+
+print_supported_target_hint() {
+  cat <<EOF >&2
+Supported target hints: $supported_target_hints
+Run 'zig targets' (or pipe to 'rg -F <arch>') to explore the full set of valid triples.
+EOF
+}
+
+validate_target_triple() {
+  case "$1" in
+    x86-linux|x86_64-linux|aarch64-linux|arm64-linux)
+      return
+      ;;
+  esac
+  if zig targets | grep -Fq "\"$1\""; then
+    return
+  fi
+
+  printf 'Unsupported --target value: %s\n' "$1" >&2
+  print_supported_target_hint
+  exit 1
 }
 
 dest_override=""
@@ -47,6 +73,8 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+[ -n "$target_triple" ] && validate_target_triple "$target_triple"
 
 [ -z "$target_triple" ] && {
   # Auto-detect host target via `zig env`. Prefer a concrete Zig triple; if
