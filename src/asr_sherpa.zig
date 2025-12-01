@@ -28,6 +28,12 @@ const encoder_filename = "encoder-epoch-34-avg-19.onnx";
 const decoder_filename = "decoder-epoch-34-avg-19.onnx";
 const joiner_filename = "joiner-epoch-34-avg-19.onnx";
 
+var legacy_model_dir_used: bool = false;
+
+pub fn wasLegacyModelDirUsed() bool {
+    return legacy_model_dir_used;
+}
+
 /// Sherpa 模型配置（目前默认使用离线 zipformer transducer）。
 pub const Config = struct {
     /// 模型目录，应包含 tokens.txt 以及 encoder/decoder/joiner onnx。
@@ -74,17 +80,37 @@ fn recognizeWithRealModelAndConfig(
     num_threads: i32,
 ) ![]SegmentResult {
     var model_dir_owned: ?[]u8 = null;
+    var base_dir_owned: ?[]u8 = null;
     defer if (model_dir_owned) |buf| allocator.free(buf);
+    defer if (base_dir_owned) |buf| allocator.free(buf);
 
     // 1. 优先使用用户显式指定的目录（环境变量 SHERPA_MODEL_DIR）。
     const env_dir_owned = std.process.getEnvVarOwned(allocator, "SHERPA_MODEL_DIR") catch null;
     defer if (env_dir_owned) |d| allocator.free(d);
 
-    const mm_cfg = model_manager.Config{
-        .env_model_dir = if (env_dir_owned) |d| d else null,
-        .base_dir = ".",
-    };
-    model_dir_owned = try model_manager.ensureModelDir(allocator, mm_cfg);
+    if (env_dir_owned) |env_dir| {
+        // 显式配置时直接信任外部提供的目录。
+        const mm_cfg = model_manager.Config{
+            .env_model_dir = env_dir,
+        };
+        model_dir_owned = try model_manager.ensureModelDir(allocator, mm_cfg);
+    } else {
+        // 未显式配置时：
+        // 1. 若当前工作目录下存在旧版模型目录（./sherpa-model 且文件完整），优先使用该目录，
+        // 2. 否则，将模型下载到用户主目录下的隐藏目录：~/.flaten/sherpa-model。
+        const legacy_dir = try detectLegacyModelDir(allocator);
+        if (legacy_dir) |dir| {
+            model_dir_owned = dir;
+            legacy_model_dir_used = true;
+        } else {
+            base_dir_owned = try computeDefaultModelBaseDir(allocator);
+            const mm_cfg = model_manager.Config{
+                .env_model_dir = null,
+                .base_dir = base_dir_owned.?,
+            };
+            model_dir_owned = try model_manager.ensureModelDir(allocator, mm_cfg);
+        }
+    }
 
     const cfg = Config{
         .model_dir = model_dir_owned.?,
@@ -177,6 +203,46 @@ fn fallbackStub(allocator: std.mem.Allocator) ![]SegmentResult {
     const segs = try allocator.alloc(SegmentResult, 1);
     segs[0] = .{ .start_ms = 0, .end_ms = 500, .text = text };
     return segs;
+}
+
+fn computeDefaultModelBaseDir(allocator: std.mem.Allocator) ![]u8 {
+    switch (builtin.os.tag) {
+        .windows => {
+            if (std.process.getEnvVarOwned(allocator, "USERPROFILE") catch null) |home| {
+                defer allocator.free(home);
+                return std.fmt.allocPrint(allocator, "{s}/.flaten", .{home});
+            }
+        },
+        else => {
+            if (std.process.getEnvVarOwned(allocator, "HOME") catch null) |home| {
+                defer allocator.free(home);
+                return std.fmt.allocPrint(allocator, "{s}/.flaten", .{home});
+            }
+        },
+    }
+
+    // Fallback: keep previous behavior and use current directory.
+    return allocator.dupe(u8, ".");
+}
+
+fn detectLegacyModelDir(allocator: std.mem.Allocator) !?[]u8 {
+    const dir = model_manager.default_model_dir_name;
+
+    const encoder_path = try joinPathZ(allocator, dir, encoder_filename);
+    defer allocator.free(encoder_path);
+    const decoder_path = try joinPathZ(allocator, dir, decoder_filename);
+    defer allocator.free(decoder_path);
+    const joiner_path = try joinPathZ(allocator, dir, joiner_filename);
+    defer allocator.free(joiner_path);
+    const tokens_path = try joinPathZ(allocator, dir, model_manager.default_tokens_file);
+    defer allocator.free(tokens_path);
+
+    if (!fileExists(encoder_path) or !fileExists(decoder_path) or !fileExists(joiner_path) or !fileExists(tokens_path)) {
+        return null;
+    }
+
+    const owned = try allocator.dupe(u8, dir);
+    return @as(?[]u8, owned);
 }
 
 fn fileExists(path_z: [:0]const u8) bool {

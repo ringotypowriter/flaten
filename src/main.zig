@@ -73,6 +73,21 @@ pub fn main() !void {
     defer allocator.free(full_output_path);
 
     progress.printSummary(full_output_path);
+
+    if (flaten.asr_sherpa.wasLegacyModelDirUsed()) {
+        std.debug.print(
+            "Notice: detected legacy model directory './{s}'.\n",
+            .{flaten.model_manager.default_model_dir_name},
+        );
+        std.debug.print(
+            "For future runs, it is recommended to move it to '~/.flaten/sherpa-model'.\n",
+            .{},
+        );
+        std.debug.print(
+            "For example:\n  mv {s} ~/.flaten/sherpa-model\n",
+            .{flaten.model_manager.default_model_dir_name},
+        );
+    }
 }
 
 test "simple test" {

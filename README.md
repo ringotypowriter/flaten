@@ -48,8 +48,10 @@ To see all CLI options (e.g. VAD parameters, sample rate), run:
 
 `flaten` uses sherpa-onnx offline models:
 
-- By default, the model manager will download a small zh-en zipformer model into `sherpa-model/` on first use.
-- If you already have models, point `flaten` to them via the `SHERPA_MODEL_DIR` environment variable.
+- On startup, `flaten` first checks the `SHERPA_MODEL_DIR` environment variable; if set, that directory is used as the model root.
+- If `SHERPA_MODEL_DIR` is not set and a complete model is already present in `./sherpa-model` (the legacy default), `flaten` will use it and print a notice suggesting that you move it to `~/.flaten/sherpa-model`.
+- In all other cases, `flaten` will auto-download a small zh-en zipformer model into `~/.flaten/sherpa-model` on first use.
+- If you already have models elsewhere, point `flaten` to them via the `SHERPA_MODEL_DIR` environment variable.
 
 On macOS with Homebrew:
 

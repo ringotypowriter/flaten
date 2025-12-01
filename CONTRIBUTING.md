@@ -84,7 +84,9 @@ Entry points:
 ### Model management (`model_manager.zig`)
 
 - Determines where models live and whether they are ready.
-- Honors `SHERPA_MODEL_DIR` if set; otherwise uses a fixed folder such as `sherpa-model/` under a base dir.
+- Honors `SHERPA_MODEL_DIR` if set.
+- In normal CLI usage, falls back to a hidden per-user directory like `~/.flaten/sherpa-model` when no explicit model directory is provided.
+- For legacy setups, if a complete model tree already exists under `./sherpa-model`, the CLI will continue to use it for that run and print a notice suggesting migration to `~/.flaten/sherpa-model`.
 - Considers the model “ready” when it can find `tokens.txt`.
 - Uses an injectable `DownloadFn` in tests so no real network is needed.
 

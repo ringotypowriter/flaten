@@ -256,8 +256,9 @@ for turning video or audio files into subtitle files using offline speech recogn
 ## Models
 
 - On startup, flaten first checks `SHERPA_MODEL_DIR`; if set, that directory is used as the model root.
-- If `SHERPA_MODEL_DIR` is not set, flaten will download a default small zh/en sherpa-onnx model into a local directory (relative to the current working directory) when internet access is available.
-- For offline environments, you can pre-populate the model directory and/or point `SHERPA_MODEL_DIR` to an existing sherpa-onnx model.
+- If `SHERPA_MODEL_DIR` is not set and a complete model already exists in `./sherpa-model` (the legacy default), flaten will use it for that run and print a notice suggesting migration to `~/.flaten/sherpa-model`.
+- In all other cases, flaten will download a default small zh/en sherpa-onnx model into `~/.flaten/sherpa-model` in the user’s home directory when internet access is available.
+- For offline environments, you can pre-populate `~/.flaten/sherpa-model` and/or point `SHERPA_MODEL_DIR` to an existing sherpa-onnx model.
 
 ## Quick start
 
