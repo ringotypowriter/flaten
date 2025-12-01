@@ -1,23 +1,22 @@
 const std = @import("std");
 
-/// 模型管理错误类型。
+/// Model management error types.
 pub const Error = error{
     DownloadFailed,
 };
 
-/// 默认使用的模型信息：zipformer 小型中英双语模型。
-/// 链接来源：sherpa-onnx 官方发布的
-/// `sherpa-onnx-zipformer-zh-en-2023-11-22` 模型归档。
-/// 注意：模型会被统一解压到一个固定目录名下，避免因为模型日期变化导致路径改变。
+/// Default model metadata: the Zipformer small Chinese-English bilingual model.
+/// Source: the official sherpa-onnx release `sherpa-onnx-zipformer-zh-en-2023-11-22`.
+/// Note: the model is always extracted into a fixed directory name to keep paths stable across updates.
 pub const default_model_archive_url =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-zh-en-2023-11-22.tar.bz2";
-/// 固定的模型目录名（相对于 base_dir），与具体模型无关。
-/// 以后如果更换模型，只需调整下载 URL 即可，目录仍然是 `sherpa-model/`。
+/// Fixed model directory name (relative to base_dir), independent of which actual model is used.
+/// Future model swaps only require updating the download URL; the directory remains `sherpa-model/`.
 pub const default_model_dir_name = "sherpa-model";
 pub const default_model_file = "model.int8.onnx";
 pub const default_tokens_file = "tokens.txt";
 
-/// 下载函数签名，用于在测试中注入 fake downloader。
+/// Downloader function signature, enabling tests to inject fake downloaders.
 pub const DownloadFn = *const fn (
     allocator: std.mem.Allocator,
     base_dir: []const u8,
@@ -25,33 +24,33 @@ pub const DownloadFn = *const fn (
     ctx: ?*anyopaque,
 ) anyerror!void;
 
-/// 模型管理配置。
+/// Model management configuration.
 pub const Config = struct {
-    /// 若提供，则优先使用该目录（通常来自环境变量 SHERPA_MODEL_DIR）。
+    /// If provided, this directory is preferred (typically supplied via SHERPA_MODEL_DIR).
     env_model_dir: ?[]const u8 = null,
-    /// 模型所在目录名（相对于 base_dir）。
+    /// Model directory name (relative to base_dir).
     model_dir_name: []const u8 = default_model_dir_name,
-    /// 模型文件名。
+    /// Model filename.
     model_file: []const u8 = default_model_file,
-    /// tokens 文件名。
+    /// Tokens filename.
     tokens_file: []const u8 = default_tokens_file,
-    /// 下载函数。为 null 时使用默认实现（curl + tar）。
+    /// Downloader function. When null, the default curl + tar implementation is used.
     download_fn: ?DownloadFn = null,
-    /// 传给下载函数的上下文，测试时可用于标记调用次数等。
+    /// Context passed to the downloader, useful for counting calls in tests.
     download_ctx: ?*anyopaque = null,
-    /// 基础目录，真实运行时应传入当前工作目录 "."。
+    /// Base directory; real runs should pass the current working directory ".".
     base_dir: []const u8 = ".",
 };
 
-/// 确保模型目录存在且包含必要文件；若缺失则触发下载。
-/// 返回的路径为 UTF-8 字符串，由调用方负责释放。
+/// Ensure the model directory exists and contains required files; download if a file is missing.
+/// Returns a UTF-8 string path that the caller is responsible for freeing.
 pub fn ensureModelDir(allocator: std.mem.Allocator, cfg: Config) ![]u8 {
-    // 1. 优先使用外部指定的模型目录（通常来自环境变量）。
+    // 1. Prefer an externally specified model directory (usually provided via an environment variable).
     if (cfg.env_model_dir) |env_dir| {
         return allocator.dupe(u8, env_dir);
     }
 
-    // 2. 否则以 base_dir + model_dir_name 为目标目录。
+    // 2. Otherwise build base_dir + model_dir_name as the target directory.
     const model_dir = try joinPath(allocator, cfg.base_dir, cfg.model_dir_name);
     errdefer allocator.free(model_dir);
 
@@ -60,8 +59,8 @@ pub fn ensureModelDir(allocator: std.mem.Allocator, cfg: Config) ![]u8 {
     const tokens_path = try joinPath(allocator, model_dir, cfg.tokens_file);
     defer allocator.free(tokens_path);
 
-    // 这里只强制要求 tokens 文件存在，用于判断模型是否已经到位。
-    // 具体使用哪些 ONNX 文件由上层（如 asr_sherpa）自行决定。
+    // Only the tokens file is enforced here, which signals that the model is ready.
+    // Higher-level modules (e.g., asr_sherpa) decide which ONNX files to use.
     if (!fileExists(tokens_path)) {
         const downloader = cfg.download_fn orelse defaultDownloadAndExtract;
         try downloader(allocator, cfg.base_dir, cfg.model_dir_name, cfg.download_ctx);
@@ -74,7 +73,7 @@ pub fn ensureModelDir(allocator: std.mem.Allocator, cfg: Config) ![]u8 {
     return model_dir;
 }
 
-/// 真实运行时使用：从网络下载并解压预训练模型到 base_dir/model_dir_name。
+/// Used in real runs: download and extract the pretrained model from the network to base_dir/model_dir_name.
 fn defaultDownloadAndExtract(
     allocator: std.mem.Allocator,
     base_dir: []const u8,
@@ -83,7 +82,7 @@ fn defaultDownloadAndExtract(
 ) !void {
     _ = ctx;
 
-    // 默认下载到 base_dir/model_dir_name，tar 时去掉归档里的最外层目录。
+    // Default behavior: download into base_dir/model_dir_name and strip the outermost directory from the archive when extracting.
     var cmd_buf = std.array_list.Managed(u8).init(allocator);
     errdefer cmd_buf.deinit();
 
@@ -93,7 +92,7 @@ fn defaultDownloadAndExtract(
     );
     const cmd = try cmd_buf.toOwnedSlice();
     defer allocator.free(cmd);
-    // cmd_buf 的内存已经被转移给 cmd。
+    // cmd_buf's memory has been transferred to cmd.
 
     var child = std.process.Child.init(&.{ "sh", "-c", cmd }, allocator);
     child.stdin_behavior = .Ignore;
@@ -180,7 +179,7 @@ test "ensureModelDir triggers download when files missing" {
                 flag.* = true;
             }
 
-            // 在 base/model_dir_name 下创建必要文件。
+            // Create the required files under base/model_dir_name.
             var dir = try std.fs.cwd().openDir(base, .{ .iterate = true });
             defer dir.close();
 
@@ -213,7 +212,7 @@ test "ensureModelDir triggers download when files missing" {
     defer gpa.free(dir_path);
 
     try std.testing.expect(called);
-    // ensureModelDir 返回的路径应为 base_dir + "/" + default_model_dir_name。
+    // ensureModelDir should return base_dir + "/" + default_model_dir_name.
     const expected_dir = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ base_dir, default_model_dir_name });
     defer gpa.free(expected_dir);
     try std.testing.expectEqualStrings(expected_dir, dir_path);
@@ -228,7 +227,7 @@ test "ensureModelDir skips download when files already exist" {
     const base_dir = try tmp.dir.realpathAlloc(gpa, ".");
     defer gpa.free(base_dir);
 
-    // 预先创建模型目录和必需文件。
+    // Pre-create the model directory and required files.
     var root = try std.fs.cwd().openDir(base_dir, .{ .iterate = true });
     defer root.close();
 

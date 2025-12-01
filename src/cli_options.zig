@@ -1,6 +1,6 @@
 const std = @import("std");
 
-/// 输出格式类型，目前支持 SRT 和纯文本 txt。
+/// Output formats currently supported: SRT and plain text txt.
 pub const OutputFormat = enum {
     srt,
     txt,
@@ -9,9 +9,9 @@ pub const OutputFormat = enum {
 pub const CliOptions = struct {
     input_path: []const u8,
     output_path: []const u8,
-    /// 输出格式，默认 SRT；可通过 --format 或 --txt 切换。
+    /// Output format, defaulting to SRT; can be switched via --format or --txt.
     format: OutputFormat = .srt,
-    /// 仅在 txt 格式下生效的片段分隔符；默认为换行符 "\n"。
+    /// Segment separator active only in txt mode; defaults to the newline "\n".
     txt_separator: []const u8,
     sample_rate: u32 = 16_000,
     min_speech_ms: u32 = 300,
@@ -57,7 +57,7 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !CliOptions
             if (i >= args.len) return ParseError.MissingValue;
             txt_separator = try allocator.dupe(u8, args[i]);
         } else if (std.mem.eql(u8, arg, "--txt")) {
-            // 兼容老参数：等价于 --format txt
+        // Legacy flag: equivalent to --format txt.
             format = .txt;
         } else if (std.mem.eql(u8, arg, "--sample-rate")) {
             i += 1;

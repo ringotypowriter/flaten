@@ -3,9 +3,9 @@ const builtin = @import("builtin");
 const model_manager = @import("model_manager.zig");
 
 const c = @cImport({
-    // 依赖 build.zig 里配置好的 sherpa-onnx include 目录：
+    // Depends on the sherpa-onnx include directory configured in build.zig:
     // - third_party/sherpa-onnx/v1.12.17/*/include
-    // 这里按安装树里的相对路径引用即可。
+    // Refer to it via the relative install path as shown.
     @cInclude("sherpa-onnx/c-api/c-api.h");
 });
 
@@ -23,7 +23,7 @@ pub const Error = error{
     DownloadFailed,
 };
 
-/// 默认使用的 zipformer 转导模型文件名（对应 sherpa-onnx-zipformer-zh-en-2023-11-22）。
+/// Default zipformer transducer model filenames corresponding to sherpa-onnx-zipformer-zh-en-2023-11-22.
 const encoder_filename = "encoder-epoch-34-avg-19.onnx";
 const decoder_filename = "decoder-epoch-34-avg-19.onnx";
 const joiner_filename = "joiner-epoch-34-avg-19.onnx";
@@ -34,19 +34,19 @@ pub fn wasLegacyModelDirUsed() bool {
     return legacy_model_dir_used;
 }
 
-/// Sherpa 模型配置（目前默认使用离线 zipformer transducer）。
+/// Sherpa model configuration (currently defaults to the offline zipformer transducer).
 pub const Config = struct {
-    /// 模型目录，应包含 tokens.txt 以及 encoder/decoder/joiner onnx。
+    /// Model directory; should contain tokens.txt plus encoder/decoder/joiner ONNX files.
     model_dir: []const u8,
-    /// ONNX Runtime provider：cpu/cuda/mps 等。
+    /// ONNX Runtime provider, e.g., cpu/cuda/mps.
     provider: []const u8 = "cpu",
-    /// 解码策略：greedy_search / modified_beam_search 等。
+    /// Decoding strategy: greedy_search, modified_beam_search, etc.
     decoding_method: []const u8 = "greedy_search",
-    /// 推理线程数。
+    /// Number of inference threads.
     num_threads: i32 = 2,
-    /// 输入采样率（Hz）。
+    /// Input sample rate (Hz).
     sample_rate: u32 = 16_000,
-    /// 特征维度，官方模型一般为 80。
+    /// Feature dimension; official models usually use 80.
     feature_dim: u32 = 80,
 };
 
@@ -84,20 +84,20 @@ fn recognizeWithRealModelAndConfig(
     defer if (model_dir_owned) |buf| allocator.free(buf);
     defer if (base_dir_owned) |buf| allocator.free(buf);
 
-    // 1. 优先使用用户显式指定的目录（环境变量 SHERPA_MODEL_DIR）。
+    // 1. Prefer a user-specified directory (from SHERPA_MODEL_DIR) if available.
     const env_dir_owned = std.process.getEnvVarOwned(allocator, "SHERPA_MODEL_DIR") catch null;
     defer if (env_dir_owned) |d| allocator.free(d);
 
     if (env_dir_owned) |env_dir| {
-        // 显式配置时直接信任外部提供的目录。
+        // Trust the externally provided directory when explicitly configured.
         const mm_cfg = model_manager.Config{
             .env_model_dir = env_dir,
         };
         model_dir_owned = try model_manager.ensureModelDir(allocator, mm_cfg);
     } else {
-        // 未显式配置时：
-        // 1. 若当前工作目录下存在旧版模型目录（./sherpa-model 且文件完整），优先使用该目录，
-        // 2. 否则，将模型下载到用户主目录下的隐藏目录：~/.flaten/sherpa-model。
+    // When no explicit directory is configured:
+        // 1. Prefer the legacy ./sherpa-model directory under the current working directory if it is complete.
+        // 2. Otherwise download the model into the hidden ~/.flaten/sherpa-model directory.
         const legacy_dir = try detectLegacyModelDir(allocator);
         if (legacy_dir) |dir| {
             model_dir_owned = dir;
@@ -134,7 +134,7 @@ fn recognizeWithModel(allocator: std.mem.Allocator, wav_data: []const u8, cfg: C
         return Error.MissingModel;
     }
 
-    // 构造离线识别配置（使用 transducer/zipformer 路径）。
+    // Configure the offline recognizer (using the transducer/zipformer paths).
     var rec_cfg = std.mem.zeroes(c.SherpaOnnxOfflineRecognizerConfig);
     rec_cfg.feat_config.sample_rate = @intCast(cfg.sample_rate);
     rec_cfg.feat_config.feature_dim = @intCast(cfg.feature_dim);
@@ -167,8 +167,8 @@ fn recognizeWithModel(allocator: std.mem.Allocator, wav_data: []const u8, cfg: C
     if (stream == null) return Error.StreamInitFailed;
     defer c.SherpaOnnxDestroyOfflineStream(stream);
 
-    // 自动适配输入数据（WAV 容器 / 裸 PCM）、采样率与声道数，
-    // 统一转换为 cfg.sample_rate 的单声道 float32 PCM。
+    // Automatically adapt the input (WAV container or raw PCM), sample rate, and channel count,
+    // converting everything into mono float32 PCM at cfg.sample_rate.
     const prepared = try prepareAudioForSherpa(allocator, wav_data, cfg.sample_rate);
     defer allocator.free(prepared.samples);
 
@@ -197,7 +197,7 @@ fn recognizeWithModel(allocator: std.mem.Allocator, wav_data: []const u8, cfg: C
     return segs;
 }
 
-/// 没有可用模型时的兜底实现，保证上层逻辑/测试都有输出。
+/// Fallback implementation when no model is available, ensuring upstream logic/tests still produce output.
 fn fallbackStub(allocator: std.mem.Allocator) ![]SegmentResult {
     const text = try allocator.dupe(u8, "hello (stub)");
     const segs = try allocator.alloc(SegmentResult, 1);
@@ -255,7 +255,7 @@ fn joinPathZ(allocator: std.mem.Allocator, a: []const u8, b: []const u8) ![:0]u8
     errdefer list.deinit();
     try list.writer().print("{s}/{s}\x00", .{ a, b });
     const slice = try list.toOwnedSlice();
-    // reinterpret owned slice (已经带有结尾的 0)
+// reinterpret owned slice (already includes the trailing zero)
     return slice[0 .. slice.len - 1 :0];
 }
 
@@ -264,9 +264,9 @@ fn toCStringConst(allocator: std.mem.Allocator, text: []const u8) ![:0]const u8 
 }
 
 const PreparedAudio = struct {
-    /// 单声道、归一化到 [-1, 1] 的 float32 PCM。
+    /// Mono float32 PCM normalized to [-1, 1].
     samples: []f32,
-    /// samples 对应的真实采样率（最终会是 target_sample_rate）。
+    /// The actual sampling rate of samples (should end up equal to target_sample_rate).
     sample_rate: u32,
 };
 
@@ -304,7 +304,7 @@ fn prepareAudioForSherpa(
         };
     }
 
-    // 回退：按裸 s16le、单声道、target_sample_rate 解释。
+    // Fall back to interpreting the bytes as raw s16le mono at target_sample_rate.
     const sample_count = raw.len / 2;
     var samples = try allocator.alloc(f32, sample_count);
     var i: usize = 0;
@@ -359,12 +359,12 @@ fn tryParseWavPcm16(raw: []const u8) ?WavPcm16 {
 
         var advance = @as(usize, chunk_size);
         if ((advance & 1) != 0) {
-            advance += 1; // 对齐到偶数字节
+            advance += 1; // Align to even-byte boundary.
         }
         pos = data_start + advance;
     }
 
-    if (audio_format != 1) return null; // 只支持 PCM
+    if (audio_format != 1) return null; // Only PCM is supported.
     if (bits_per_sample != 16) return null;
     if (num_channels == 0) return null;
     if (data_offset == 0 or data_size == 0) return null;
@@ -439,7 +439,7 @@ fn resampleLinear(
     dst_rate: u32,
 ) ![]f32 {
     if (input.len == 0 or src_rate == 0 or dst_rate == 0 or src_rate == dst_rate) {
-        // 不需要重采样，直接拷贝一份，避免悬垂引用。
+        // No resampling needed; duplicate to avoid dangling references.
         return try allocator.dupe(f32, input);
     }
 
@@ -483,7 +483,7 @@ test "recognize returns at least one keyword for hello clip" {
         gpa.free(results);
     }
 
-    // 对真实实现，期望包含 hello/world；stub 也会返回 hello。
+    // For the real implementation expect hello/world; the stub also returns hello.
     var found = false;
     for (results) |seg| {
         if (std.mem.indexOf(u8, seg.text, "hello") != null or std.mem.indexOf(u8, seg.text, "world") != null) {
@@ -496,7 +496,7 @@ test "recognize returns at least one keyword for hello clip" {
 test "integration: recognize real wav returns non-empty text" {
     const gpa = std.testing.allocator;
 
-    // 使用工作目录下的测试音频，路径为 test_resources/test.wav。
+    // Use the test audio located at test_resources/test.wav relative to the working directory.
     var file = try std.fs.cwd().openFile("test_resources/test.wav", .{});
     defer file.close();
 
@@ -509,7 +509,7 @@ test "integration: recognize real wav returns non-empty text" {
     const read_bytes = try file.readAll(buf);
     try std.testing.expectEqual(size, read_bytes);
 
-    // 通过真实模型入口进行识别，必要时会触发网络下载模型。
+    // Invoke the real model entry point for recognition; downloading the model may occur if needed.
     const results = try recognizeWithRealModel(gpa, buf);
     defer {
         for (results) |seg| {

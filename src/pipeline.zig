@@ -5,14 +5,14 @@ const asr_sherpa = @import("asr_sherpa.zig");
 const ffmpeg_adapter = @import("ffmpeg_adapter.zig");
 const pipeline_progress = @import("pipeline_progress.zig");
 
-// Pipeline 级别的字幕边界 padding（毫秒），在构建 SRT 时使用。
+// Pipeline-level subtitle boundary padding (milliseconds) used when building SRT output.
 const pre_pad_ms: u32 = 150;
 const post_pad_ms: u32 = 150;
 
 pub const OutputFormat = enum {
-    /// 默认行为：输出带时间轴的 SRT 字幕。
+    /// Default behavior: output SRT subtitles with timestamps.
     srt,
-    /// 纯文本模式：每个识别结果一行，不带时间轴。
+    /// Plain text mode: each recognition result on its own line without timestamps.
     txt,
 };
 
@@ -20,11 +20,11 @@ pub const PipelineConfig = struct {
     sample_rate: u32 = 16_000,
     min_speech_ms: u32 = 300,
     min_silence_ms: u32 = 200,
-    /// ASR 推理线程数，透传给 sherpa-onnx/ONNX Runtime。
+    /// ASR inference thread count forwarded to sherpa-onnx/ONNX Runtime.
     asr_num_threads: i32 = 2,
-    /// 输出格式：SRT（默认）或纯文本 txt。
+    /// Output format: SRT (default) or plain text.
     output_format: OutputFormat = .srt,
-    /// txt 输出模式下使用的片段分隔符，默认为 "\n"。
+    /// Separator used when txt format is selected; defaults to "\n".
     txt_separator: []const u8 = "\n",
 };
 
@@ -36,10 +36,10 @@ pub const Error = error{
     UnsupportedSampleRate,
 };
 
-/// 根据 VAD 语音段与对应的 ASR 结果，按“原始时间线”生成 SRT。
-/// - `segments[i]` 表示原始音频上的一个语音片段；
-/// - `results_per_segment[i]` 是该片段的识别结果（局部时间，从 0 开始计）。
-/// 最终会把局部时间平移回原始时间轴：
+/// Builds SRT subtitles on the original timeline from VAD segments and their ASR results.
+/// - `segments[i]` represents a speech segment on the original audio timeline.
+/// - `results_per_segment[i]` holds the recognition results for that segment (local timestamps starting at 0).
+/// Local timestamps are shifted back to the original timeline:
 ///   global_ms = segment.start_ms + local_ms
 pub fn buildSrtFromSegments(
     allocator: std.mem.Allocator,
@@ -47,8 +47,7 @@ pub fn buildSrtFromSegments(
     results_per_segment: []const []const asr_sherpa.SegmentResult,
 ) ![]u8 {
     if (segments.len != results_per_segment.len) {
-        // 设计上调用方必须保证两者长度一致；这里直接 panic，
-        // 避免将额外错误类型泄露到上层 Error 集合中。
+        // The caller must guarantee both lengths match; panic here to avoid adding more error variants to the upstream Error set.
         std.debug.panic("segments.len ({d}) != results_per_segment.len ({d})", .{
             segments.len,
             results_per_segment.len,
@@ -79,8 +78,8 @@ pub fn buildSrtFromSegments(
     return srt;
 }
 
-/// 将分段 ASR 结果按顺序拼接成纯文本，每个 SegmentResult 一行。
-/// 不包含时间轴，仅按识别顺序用 `separator` 分割。
+/// Concatenate segmented ASR results into plain text with one line per SegmentResult.
+/// No timestamps; entries are joined in recognition order using `separator`.
 pub fn buildTxtFromSegmentResults(
     allocator: std.mem.Allocator,
     results_per_segment: []const []const asr_sherpa.SegmentResult,
@@ -94,7 +93,7 @@ pub fn buildTxtFromSegmentResults(
 
     for (results_per_segment) |seg_results| {
         for (seg_results) |res| {
-            // 跳过空文本，避免输出空行。
+            // Skip empty transcripts to avoid emitting blank lines.
             if (res.text.len == 0) continue;
 
             if (!first) {
@@ -140,19 +139,19 @@ fn transcribe_video_to_srt_impl(
         p.markStart();
     }
 
-    // 当前 ASR 配置固定为 16k 采样率，避免采样率不一致。
+    // The ASR configuration is fixed at 16k sample rate to prevent mismatched sampling.
     if (cfg.sample_rate != 16_000) {
         return Error.UnsupportedSampleRate;
     }
 
-    // 1. 调用 ffmpeg 将输入文件解码为单声道 s16le PCM。
+    // 1. Use ffmpeg to decode the input file into mono s16le PCM.
     const pcm = try decodePcmFromFfmpeg(allocator, input_path, cfg.sample_rate, progress);
     defer allocator.free(pcm);
     if (progress) |p| {
         p.onFfmpegDone();
     }
 
-    // 2. 使用 VAD 在原始时间线上检测语音段。
+    // 2. Use VAD to detect speech segments on the original timeline.
     const vad_cfg = audio_segmenter.VadConfig{
         .frame_ms = 20,
         .energy_threshold = 500,
@@ -177,11 +176,11 @@ fn transcribe_video_to_srt_impl(
     }
 
     if (segments.len == 0) {
-        // 没有检测到语音段，返回空 SRT。
+        // No speech segments were detected; return an empty SRT.
         return allocator.dupe(u8, "");
     }
 
-    // 3. 对每个语音段单独调用 ASR，结果仍是“局部时间”。
+    // 3. Call ASR for each speech segment separately; results remain in local time.
     var results_per_segment = std.array_list.Managed([]asr_sherpa.SegmentResult).init(allocator);
     errdefer cleanupAsrResults(&results_per_segment);
 
@@ -193,7 +192,7 @@ fn transcribe_video_to_srt_impl(
         const start_idx: usize = @intCast((seg.start_ms * cfg.sample_rate) / 1000);
         const end_idx: usize = @intCast((seg.end_ms * cfg.sample_rate) / 1000);
         if (start_idx >= end_idx or end_idx > pcm.len) {
-            // 保持 results_per_segment.len 与 segments.len 对齐，填充空结果。
+            // Keep results_per_segment.len aligned with segments.len by padding an empty result.
             const empty = try allocator.alloc(asr_sherpa.SegmentResult, 0);
             try results_per_segment.append(empty);
             continue;
@@ -220,15 +219,15 @@ fn transcribe_video_to_srt_impl(
         p.onAsrDone();
     }
 
-    // 4. 在构建 SRT 前，对时间线做轻量 padding，让字幕稍微提前出现、延后消失。
-    // 或直接按段落文本构建纯文本输出。
+    // 4. Apply light padding to the timeline before constructing the SRT so subtitles appear a bit early and disappear slightly late.
+    // Alternatively, build the plain text output directly from the paragraphs.
     var output: []u8 = undefined;
     switch (cfg.output_format) {
         .srt => {
             const padded_segments = try padSegmentsForSrt(allocator, segments);
             defer allocator.free(padded_segments);
 
-            // 将局部时间映射回原始时间线，生成最终 SRT。
+            // Map the local timestamps back to the original timeline to generate the final SRT.
             if (progress) |p| {
                 // Treat SRT building as a single unit of work for now.
                 p.setSrtTotalItems(1);
@@ -244,7 +243,7 @@ fn transcribe_video_to_srt_impl(
         },
         .txt => {
             if (progress) |p| {
-                // 对于 txt 输出，同样视为单个步骤，便于整体进度观测。
+                // Treat txt output as a single step for consistent progress tracking.
                 p.setSrtTotalItems(1);
                 p.onSrtItemDone();
                 p.onSrtDone();
@@ -310,7 +309,7 @@ test "buildTxtFromSegmentResults flattens results into newline-separated text" {
 test "buildSrtFromSegments preserves gaps between speech segments" {
     const gpa = std.testing.allocator;
 
-    // 两个语音段：1s-2s、4s-5s，中间有静音。
+    // Two speech segments: 1s-2s and 4s-5s with silence between them.
     const segments = [_]audio_segmenter.SpeechSegment{
         .{ .start_ms = 1_000, .end_ms = 2_000 },
         .{ .start_ms = 4_000, .end_ms = 5_000 },
@@ -330,7 +329,7 @@ test "buildSrtFromSegments preserves gaps between speech segments" {
     );
     defer gpa.free(srt);
 
-    // 期望第一条字幕在 1.0-1.5s，第二条在 4.0-4.5s，且编号连续。
+    // Expect the first subtitle around 1.0-1.5s, the second around 4.0-4.5s, and numbering remains consecutive.
     try std.testing.expect(std.mem.containsAtLeast(u8, srt, 1, "1\n00:00:01,000 --> 00:00:01,500"));
     try std.testing.expect(std.mem.containsAtLeast(u8, srt, 1, "HELLO"));
     try std.testing.expect(std.mem.containsAtLeast(u8, srt, 1, "2\n00:00:04,000 --> 00:00:04,500"));
@@ -349,7 +348,7 @@ test "transcribe_video_to_srt runs on example mp4 (stub ASR)" {
     const srt = try transcribe_video_to_srt(gpa, "test_resources/test.mp4", cfg);
     defer gpa.free(srt);
 
-    // 允许空结果（例如音频近似静音），但若非空则检查 SRT 结构基本合理。
+    // Allow empty results (e.g., near silent audio); if not empty, verify SRT structure looks reasonable.
     if (srt.len > 0) {
         try std.testing.expect(std.mem.containsAtLeast(u8, srt, 1, " --> "));
     }
@@ -375,7 +374,7 @@ test "transcribe_video_to_srt_with_progress runs and updates progress" {
     );
     defer gpa.free(srt);
 
-    // 允许空结果（例如音频近似静音），但若非空则检查 SRT 结构基本合理。
+    // Allow empty results (e.g., near silent audio); if not empty, verify SRT structure looks reasonable.
     if (srt.len > 0) {
         try std.testing.expect(std.mem.containsAtLeast(u8, srt, 1, " --> "));
     }

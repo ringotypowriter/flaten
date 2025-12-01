@@ -12,7 +12,7 @@ pub const VadConfig = struct {
     min_silence_ms: u32 = 200,
 };
 
-/// VAD 错误类型。目前只可能出现内存不足。
+/// VAD error type. Currently only OutOfMemory can occur.
 pub const Error = error{OutOfMemory};
 
 pub fn detect_speech_segments(
@@ -63,10 +63,10 @@ pub fn detect_speech_segments(
                 current_silence_ms = 0;
             }
             last_voiced_end_ms = frame_ms_end;
-            // 只要再次出现有声帧，静音累积清零
+            // Reset any accumulated silence as soon as another voiced frame appears.
             current_silence_ms = 0;
         } else if (in_speech) {
-            // 语音段内部的静音：累积时长，直到超过 min_silence_ms 才真正收尾
+            // Internal silence within a speech segment accumulates; only close the segment after exceeding min_silence_ms.
             current_silence_ms += frame_ms_end - frame_ms_start;
             if (current_silence_ms >= config.min_silence_ms) {
                 const duration = last_voiced_end_ms - seg_start_ms;
@@ -82,7 +82,7 @@ pub fn detect_speech_segments(
         }
     }
 
-    // 音频结尾仍在语音段中，做一次收尾
+    // If the audio ends while still in a speech segment, finalize it once more.
     if (in_speech) {
         const duration = last_voiced_end_ms - seg_start_ms;
         if (duration >= config.min_speech_ms) {
@@ -167,7 +167,7 @@ test "short silence inside speech does not split segment when below min_silence_
     const segments = try detect_speech_segments(gpa, pcm, sample_rate, cfg);
     defer gpa.free(segments);
 
-    // 期望被视为一个连续语音段，大约覆盖 0–900ms。
+    // Expect this to be treated as one continuous speech segment covering roughly 0–900ms.
     try std.testing.expectEqual(@as(usize, 1), segments.len);
     try std.testing.expect(segments[0].start_ms <= 100 and segments[0].start_ms <= 100);
     try std.testing.expect(segments[0].end_ms >= 800 and segments[0].end_ms <= 1000);
@@ -204,10 +204,10 @@ test "longer silence splits into two segments when above min_silence_ms" {
     defer gpa.free(segments);
 
     try std.testing.expectEqual(@as(usize, 2), segments.len);
-    // 第一段大约在 0-400ms
+    // First segment should cover roughly 0-400ms.
     try std.testing.expect(segments[0].start_ms <= 100);
     try std.testing.expect(segments[0].end_ms >= 300 and segments[0].end_ms <= 500);
-    // 第二段大约在 700-1100ms
+    // Second segment should cover roughly 700-1100ms.
     try std.testing.expect(segments[1].start_ms >= 600 and segments[1].start_ms <= 800);
     try std.testing.expect(segments[1].end_ms >= 1000 and segments[1].end_ms <= 1200);
 }

@@ -113,11 +113,11 @@ pub fn main() !void {
     switch (result) {
         .Exited => |code| std.process.exit(code),
         .Signal => |sig| {
-            std.debug.print("flaten 被信号 {d} 终止\n", .{sig});
+            std.debug.print("flaten terminated by signal {d}\n", .{sig});
             return error.ChildTerminated;
         },
         else => {
-            std.debug.print("flaten 以异常状态退出\n", .{});
+            std.debug.print("flaten exited with an unexpected status\n", .{});
             return error.ChildTerminated;
         },
     }

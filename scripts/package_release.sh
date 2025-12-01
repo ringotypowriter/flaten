@@ -124,7 +124,6 @@ done
         norm_arch="x86"
         ;;
       arm64|aarch64)
-        # For macOS常见是 arm64，Linux 上更偏向 aarch64，这里统一成 aarch64-linux / arm64-darwin 由 OS 决定
         norm_arch="aarch64"
         ;;
       *)
@@ -145,7 +144,7 @@ done
         ;;
     esac
 
-    # Special-case: macOS on Apple 芯片通常叫 arm64-darwin 更直观
+
     if [ "$norm_os" = "darwin" ] && [ "$raw_arch" = "arm64" ]; then
       norm_arch="arm64"
     fi
@@ -167,7 +166,6 @@ if [ -n "$target_triple" ]; then
       ;;
     *)
       zig_build_target="$target_triple"
-      # For arbitrary targets, keep suffix without trailing "-gnu" if present.
       case "$target_triple" in
         *-linux-gnu)
           package_suffix="${target_triple%-gnu}"
