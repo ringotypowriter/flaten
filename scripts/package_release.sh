@@ -34,11 +34,17 @@ EOF
 
 validate_target_triple() {
   case "$1" in
+    # Short aliases we explicitly support.
     x86-linux|x86_64-linux|aarch64-linux|arm64-linux)
       return
       ;;
+    # Common full triples we know are valid even if `zig targets` is unavailable.
+    x86_64-linux-gnu|aarch64-linux-gnu)
+      return
+      ;;
   esac
-  if zig targets | grep -Fq "\"$1\""; then
+  zig_targets_output="$(zig targets 2>/dev/null || true)"
+  if [ -n "$zig_targets_output" ] && printf '%s\n' "$zig_targets_output" | grep -Fq "\"$1\""; then
     return
   fi
 

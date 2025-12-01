@@ -100,7 +100,12 @@ pub fn build(b: *std.Build) void {
 
     exe.root_module.addIncludePath(b.path(sherpa_include));
     exe.root_module.addLibraryPath(b.path(sherpa_lib));
-    exe.root_module.addRPath(b.path(sherpa_lib));
+
+    switch (target.result.os.tag) {
+        .linux => exe.root_module.addRPathSpecial("$ORIGIN/../lib/sherpa-onnx"),
+        .macos => exe.root_module.addRPathSpecial("@executable_path/../lib/sherpa-onnx"),
+        else => exe.root_module.addRPath(b.path(sherpa_lib)),
+    }
     exe.root_module.linkSystemLibrary("sherpa-onnx-c-api", .{});
     exe.root_module.linkSystemLibrary("onnxruntime", .{});
 

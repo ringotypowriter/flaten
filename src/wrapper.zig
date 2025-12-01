@@ -17,18 +17,44 @@ pub fn main() !void {
     probe.spawn() catch |err| {
         switch (err) {
             error.FileNotFound => {
-                std.debug.print("未找到 ffmpeg，请先安装 (例如: brew install ffmpeg)。\n", .{});
-                return err;
+                std.debug.print(
+                    "ffmpeg executable not found on PATH; flaten requires ffmpeg to decode media. Aborting.\n",
+                    .{},
+                );
+                std.process.exit(1);
             },
-            else => return err,
+            else => {
+                std.debug.print(
+                    "failed to check ffmpeg availability: {s}\n",
+                    .{@errorName(err)},
+                );
+                std.process.exit(1);
+            },
         }
     };
 
-    const probe_status = try probe.wait();
+    const probe_status = probe.wait() catch |err| {
+        switch (err) {
+            error.FileNotFound => {
+                std.debug.print(
+                    "ffmpeg executable not found on PATH; flaten requires ffmpeg to decode media. Aborting.\n",
+                    .{},
+                );
+                std.process.exit(1);
+            },
+            else => {
+                std.debug.print(
+                    "failed to check ffmpeg availability: {s}\n",
+                    .{@errorName(err)},
+                );
+                std.process.exit(1);
+            },
+        }
+    };
     switch (probe_status) {
         .Exited => {}, // OK
         else => {
-            std.debug.print("ffmpeg 存在但运行失败，请检查安装。\n", .{});
+            std.debug.print("ffmpeg is present but failed to run; please verify your ffmpeg installation.\n", .{});
             return error.FfmpegNotWorking;
         },
     }
@@ -54,8 +80,36 @@ pub fn main() !void {
     child.stdout_behavior = .Inherit;
     child.stderr_behavior = .Inherit;
 
-    try child.spawn();
-    const result = try child.wait();
+    child.spawn() catch |err| {
+        switch (err) {
+            error.FileNotFound => {
+                std.debug.print(
+                    "failed to launch flaten-core; executable not found at path: {s}\n",
+                    .{flaten_path},
+                );
+                std.process.exit(1);
+            },
+            else => {
+                std.debug.print("failed to launch flaten-core: {s}\n", .{@errorName(err)});
+                std.process.exit(1);
+            },
+        }
+    };
+    const result = child.wait() catch |err| {
+        switch (err) {
+            error.FileNotFound => {
+                std.debug.print(
+                    "failed to launch flaten-core; executable not found at path: {s}\n",
+                    .{flaten_path},
+                );
+                std.process.exit(1);
+            },
+            else => {
+                std.debug.print("failed while waiting for flaten-core: {s}\n", .{@errorName(err)});
+                std.process.exit(1);
+            },
+        }
+    };
     switch (result) {
         .Exited => |code| std.process.exit(code),
         .Signal => |sig| {
